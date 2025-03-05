@@ -52,18 +52,23 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4):
     return data
 
 # Fonction pour afficher les résultats
-def display_results(data):
+def display_results(data, montant_investi):
     total_trades = data[data['Signal'] != 0].shape[0]
     winning_trades = data[data['Trade_Result'] > 0].shape[0]
     losing_trades = data[data['Trade_Result'] < 0].shape[0]
     win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
     total_profit = data['Trade_Result'].sum()
+    
+    # Calcul du résultat final en fonction du montant investi
+    resultat_final = montant_investi * (1 + total_profit / 100)
 
     st.write(f"**Total Trades:** {total_trades}")
     st.write(f"**Winning Trades:** {winning_trades}")
     st.write(f"**Losing Trades:** {losing_trades}")
     st.write(f"**Win Rate:** {win_rate:.2f}%")
     st.write(f"**Total Profit:** {total_profit:.2f}%")
+    st.write(f"**Montant Investi:** {montant_investi:.2f} €")
+    st.write(f"**Résultat Final:** {resultat_final:.2f} €")
 
 # Fonction pour afficher les graphiques
 def plot_results(data):
@@ -102,10 +107,6 @@ if uploaded_file is not None:
     # Normaliser les noms des colonnes (supprimer les espaces et convertir en minuscules)
     data.columns = data.columns.str.strip().str.lower()
 
-    # Afficher les colonnes disponibles pour déboguer
-    st.write("**Colonnes disponibles dans le fichier CSV :**")
-    st.write(data.columns.tolist())
-
     # Renommer les colonnes si nécessaire
     data = data.rename(columns={
         'open': 'open',
@@ -120,6 +121,7 @@ if uploaded_file is not None:
     long_window = st.sidebar.number_input("Moyenne mobile longue (jours)", value=50)
     stop_loss_pct = st.sidebar.number_input("Stop-loss (%)", value=2.0)
     take_profit_pct = st.sidebar.number_input("Take-profit (%)", value=4.0)
+    montant_investi = st.sidebar.number_input("Montant Investi (€)", value=1000.0)
 
     # Calcul des indicateurs et simulation de la stratégie
     data = calculate_indicators(data, short_window, long_window)
@@ -127,7 +129,7 @@ if uploaded_file is not None:
 
     # Affichage des résultats
     st.write("**Résultats de la simulation :**")
-    display_results(data)
+    display_results(data, montant_investi)
 
     # Affichage des graphiques
     st.write("**Graphiques :**")
