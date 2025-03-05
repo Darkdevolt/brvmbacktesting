@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 
 def process_data(file):
-    # Lecture du fichier CSV en précisant le quotechar
+    # Lecture du fichier CSV en tant que texte pour éviter la suppression des zéros
     df = pd.read_csv(file, sep=',', quotechar='"', dtype=str)
-    
+
     # Nettoyage des noms de colonnes
     df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
     
@@ -25,10 +25,10 @@ def process_data(file):
         def convert_vol(val):
             try:
                 if 'K' in val:
-                    return int(float(val.replace('K', '')) * 1000)  # Supprimer 'K' et multiplier
-                return int(float(val))  # Convertir normalement
+                    return str(int(float(val.replace('K', '')) * 1000))  # Convertir en entier et en str
+                return str(int(float(val)))  # Convertir en entier et en str pour garder les zéros
             except:
-                return 0  # En cas d'erreur
+                return val  # Retourner la valeur d'origine en cas d'erreur
 
         df["Vol."] = df["Vol."].apply(convert_vol)
 
