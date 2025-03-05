@@ -2,15 +2,14 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Fonction de nettoyage des données avec correction intelligente
+# Fonction de nettoyage des données avec correction automatique
 def nettoyer_fichier(uploaded_file):
     try:
-        # Détection du format du fichier
+        # Chargement du fichier CSV ou Excel
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
         else:
-            xls = pd.ExcelFile(uploaded_file)
-            df = pd.read_excel(xls, sheet_name=xls.sheet_names[0])
+            df = pd.read_excel(uploaded_file)
 
         # Renommage des colonnes
         df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
@@ -20,15 +19,12 @@ def nettoyer_fichier(uploaded_file):
         for col in cols_a_corriger:
             df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
 
-        # Analyse des valeurs pour détecter les erreurs
+        # Détection des valeurs mal enregistrées
         for col in cols_a_corriger:
-            min_val = df[col].min()
             max_val = df[col].max()
-
-            # Si les valeurs sont incohérentes, on applique une correction sélective
-            if max_val > 100 and min_val < 100:
-                # On corrige uniquement les valeurs < 100
-                df[col] = df[col].apply(lambda x: x * 1000 if x < 100 else x)
+            
+            if max_val < 100:  # Si toutes les valeurs sont inférieures à 100, elles sont sûrement en "petit format"
+                df[col] = df[col] * 1000  # Correction automatique
 
         # Correction des dates
         df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
@@ -62,4 +58,4 @@ if uploaded_file is not None:
             data=processed_data,
             file_name="data_propre.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        
+        )
