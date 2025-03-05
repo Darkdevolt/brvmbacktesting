@@ -97,22 +97,31 @@ if uploaded_file is not None:
     st.write("**Aperçu des données :**")
     st.write(data.head())
 
-    # Paramètres personnalisables
-    short_window = st.sidebar.number_input("Moyenne mobile courte (jours)", value=20)
-    long_window = st.sidebar.number_input("Moyenne mobile longue (jours)", value=50)
-    stop_loss_pct = st.sidebar.number_input("Stop-loss (%)", value=2.0)
-    take_profit_pct = st.sidebar.number_input("Take-profit (%)", value=4.0)
+    # Affichez les colonnes disponibles pour déboguer
+    st.write("**Colonnes disponibles :**")
+    st.write(data.columns.tolist())
 
-    # Calcul des indicateurs et simulation de la stratégie
-    data = calculate_indicators(data, short_window, long_window)
-    data = backtest_strategy(data, stop_loss_pct, take_profit_pct)
+    # Vérification des colonnes nécessaires
+    required_columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+    if not all(col in data.columns for col in required_columns):
+        st.error(f"Le fichier CSV doit contenir les colonnes suivantes : {required_columns}")
+    else:
+        # Paramètres personnalisables
+        short_window = st.sidebar.number_input("Moyenne mobile courte (jours)", value=20)
+        long_window = st.sidebar.number_input("Moyenne mobile longue (jours)", value=50)
+        stop_loss_pct = st.sidebar.number_input("Stop-loss (%)", value=2.0)
+        take_profit_pct = st.sidebar.number_input("Take-profit (%)", value=4.0)
 
-    # Affichage des résultats
-    st.write("**Résultats de la simulation :**")
-    display_results(data)
+        # Calcul des indicateurs et simulation de la stratégie
+        data = calculate_indicators(data, short_window, long_window)
+        data = backtest_strategy(data, stop_loss_pct, take_profit_pct)
 
-    # Affichage des graphiques
-    st.write("**Graphiques :**")
-    plot_results(data)
+        # Affichage des résultats
+        st.write("**Résultats de la simulation :**")
+        display_results(data)
+
+        # Affichage des graphiques
+        st.write("**Graphiques :**")
+        plot_results(data)
 else:
     st.write("Veuillez télécharger un fichier CSV pour commencer.")
