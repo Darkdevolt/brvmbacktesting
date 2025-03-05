@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import ta  # Utilisation de la bibliothèque ta
+import ta  # Pour les indicateurs techniques
 import plotly.graph_objects as go
 
 # Titre de l'application
-st.title("Application de Backtesting")
+st.title("📈 Application de Backtesting - Nestlé CI (BRVM)")
 
 # Sidebar pour les paramètres
-st.sidebar.header("Paramètres de la stratégie")
+st.sidebar.header("🔧 Paramètres de la stratégie")
 
 # Paramètres RSI
 rsi_period = st.sidebar.slider("RSI Period", 1, 50, 14)
@@ -23,46 +23,65 @@ bb_period = st.sidebar.slider("Bollinger Bands Period", 1, 50, 20)
 bb_std = st.sidebar.slider("Bollinger Bands Std Dev", 1, 3, 2)
 
 # Paramètres de gestion de risque
-capital = st.sidebar.number_input("Capital de base", min_value=1000, value=10000)
-risk_per_trade = st.sidebar.number_input("Risk par trade (%)", min_value=0.1, max_value=10.0, value=1.0)
-risk_reward = st.sidebar.number_input("Risk/Reward", min_value=1.0, max_value=5.0, value=2.0)
+capital = st.sidebar.number_input("💰 Capital de départ", min_value=1000, value=10000)
+risk_per_trade = st.sidebar.number_input("⚠️ Risque par trade (%)", min_value=0.1, max_value=10.0, value=1.0)
+risk_reward = st.sidebar.number_input("🎯 Risk/Reward", min_value=1.0, max_value=5.0, value=2.0)
 
 # Upload des données historiques
-uploaded_file = st.file_uploader("Uploader votre fichier de données historiques", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("📂 Uploader votre fichier de données historiques", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Lecture des données
-    data = pd.read_excel(uploaded_file, sheet_name="in")
+    # Chargement des données
+    if uploaded_file.name.endswith('.csv'):
+        data = pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith('.xlsx'):
+        data = pd.read_excel(uploaded_file)
 
-    # Nettoyage des colonnes
-    data.columns = data.iloc[0].str.replace('"', '').str.strip()  # Supprimer les guillemets et espaces
-    data = data[1:].reset_index(drop=True)  # Supprimer la ligne des titres en double
-    
-    # Renommer les colonnes pour standardiser
-    column_mapping = {
+    # Vérifier et afficher les colonnes pour éviter les erreurs
+    st.write("📌 Colonnes détectées :", data.columns.tolist())
+
+    # Vérification et correction des colonnes
+    rename_dict = {
         'Date': 'Date',
+        'Dernier': 'Close',
         'Ouv.': 'Open',
         'Plus Haut': 'High',
         'Plus Bas': 'Low',
-        'Dernier': 'Close',
         'Vol.': 'Volume',
         'Variation %': 'Change'
     }
-    data.rename(columns=column_mapping, inplace=True)
+    
+    # Renommer les colonnes automatiquement si elles existent
+    data.rename(columns={col: rename_dict[col] for col in data.columns if col in rename_dict}, inplace=True)
 
-    # Conversion des types de données
-    data['Date'] = pd.to_datetime(data['Date'], format='%d/%m/%Y')
-    for col in ['Open', 'High', 'Low', 'Close']:
-        data[col] = data[col].str.replace(' ', '').astype(float)
+    # Vérifier que les colonnes essentielles sont bien présentes
+    required_columns = ['Date', 'Close', 'Open', 'High', 'Low', 'Volume', 'Change']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    if missing_columns:
+        st.error(f"❌ Erreur : Colonnes manquantes dans le fichier : {missing_columns}")
+        st.stop()
 
-    # Conversion des volumes (remplacement des "K" par "000")
-    data['Volume'] = data['Volume'].str.replace('K', '000').str.replace(' ', '').astype(float)
+    # Convertir "Date" en format datetime
+    data['Date'] = pd.to_datetime(data['Date'], dayfirst=True, errors='coerce')
 
-    # Nettoyage et conversion des variations
-    data['Change'] = data['Change'].str.replace('%', '').str.replace(',', '.').astype(float) / 100
+    # Convertir "Vol." (Volume) en nombre en supprimant les K et M
+    def convert_volume(vol):
+        if isinstance(vol, str):
+            vol = vol.replace('K', 'e3').replace('M', 'e6')
+            try:
+                return float(eval(vol))  # Convertit "313K" en 313000
+            except:
+                return np.nan
+        return vol
 
-    # Mettre la colonne Date en index
+    data['Volume'] = data['Volume'].apply(convert_volume)
+
+    # Convertir "Variation %" en float en supprimant le "%"
+    data['Change'] = data['Change'].str.replace('%', '').str.replace(',', '.').astype(float)
+
+    # Trier les données par date
     data.set_index('Date', inplace=True)
+    data = data.sort_index()
 
     # Calcul des indicateurs techniques avec ta
     data['RSI'] = ta.momentum.rsi(data['Close'], window=rsi_period)
@@ -72,7 +91,7 @@ if uploaded_file is not None:
     data['Middle Band'] = bb.bollinger_mavg()
     data['Lower Band'] = bb.bollinger_lband()
 
-    # Génération des signaux d'achat et de vente
+    # Génération des signaux
     data['Signal'] = 0
     data.loc[(data['RSI'] < rsi_oversold) & (data['Close'] < data['Lower Band']), 'Signal'] = 1  # Achat
     data.loc[(data['RSI'] > rsi_overbought) & (data['Close'] > data['Upper Band']), 'Signal'] = -1  # Vente
@@ -82,60 +101,59 @@ if uploaded_file is not None:
     transactions = data[data['Position'] != 0]
 
     # Affichage des transactions
-    st.write("Transactions possibles :")
+    st.write("📊 Transactions possibles :")
     st.write(transactions)
 
-    # Calcul de la rentabilité
-    initial_capital = capital
-    risk_per_trade_amount = initial_capital * (risk_per_trade / 100)
-    profit_loss = []
-
-    for i in range(len(transactions) - 1):
-        row = transactions.iloc[i]
-        next_row = transactions.iloc[i + 1]  # Éviter les erreurs d'index
-
-        entry_price = row['Close']
-        if row['Position'] == 1:  # Achat
-            stop_loss = entry_price * (1 - risk_per_trade / 100)
-            take_profit = entry_price * (1 + (risk_per_trade / 100) * risk_reward)
-            if next_row['Close'] >= take_profit:
-                profit_loss.append(risk_per_trade_amount * risk_reward)
-            elif next_row['Close'] <= stop_loss:
-                profit_loss.append(-risk_per_trade_amount)
-
-        elif row['Position'] == -1:  # Vente
-            stop_loss = entry_price * (1 + risk_per_trade / 100)
-            take_profit = entry_price * (1 - (risk_per_trade / 100) * risk_reward)
-            if next_row['Close'] <= take_profit:
-                profit_loss.append(risk_per_trade_amount * risk_reward)
-            elif next_row['Close'] >= stop_loss:
-                profit_loss.append(-risk_per_trade_amount)
-
-    # Calcul de la rentabilité totale
-    total_profit_loss = sum(profit_loss)
-    final_capital = initial_capital + total_profit_loss
-    st.write(f"Capital final : {final_capital:.2f}")
-    st.write(f"Rentabilité : {(final_capital - initial_capital) / initial_capital * 100:.2f}%")
-
-    # Value at Risk (VaR)
-    if len(profit_loss) > 0:
-        var_95 = np.percentile(profit_loss, 5)
-        st.write(f"Value at Risk (95%) : {var_95:.2f}")
-
-    # Affichage des résultats
-    if final_capital > initial_capital:
-        st.success("La stratégie est rentable.")
-    else:
-        st.error("La stratégie n'est pas rentable.")
-
-    # Visualisation des données
+    # Affichage du graphique interactif avec Plotly
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close'))
-    fig.add_trace(go.Scatter(x=data.index, y=data['MA'], mode='lines', name='MA'))
-    fig.add_trace(go.Scatter(x=data.index, y=data['Upper Band'], mode='lines', name='Upper Band'))
-    fig.add_trace(go.Scatter(x=data.index, y=data['Lower Band'], mode='lines', name='Lower Band'))
-    fig.add_trace(go.Scatter(x=transactions.index, y=transactions['Close'], mode='markers', name='Transactions', marker=dict(color='red', size=10)))
-    st.plotly_chart(fig)
 
-else:
-    st.write("Veuillez uploader un fichier CSV ou Excel contenant les données historiques.")
+    # Ajouter les chandeliers
+    fig.add_trace(go.Candlestick(
+        x=data.index,
+        open=data['Open'],
+        high=data['High'],
+        low=data['Low'],
+        close=data['Close'],
+        name='Prix'
+    ))
+
+    # Ajouter la moyenne mobile
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data['MA'],
+        mode='lines', name='Moyenne Mobile',
+        line=dict(color='blue', width=1)
+    ))
+
+    # Ajouter les bandes de Bollinger
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data['Upper Band'],
+        mode='lines', name='Bollinger Haut',
+        line=dict(color='red', width=1, dash='dot')
+    ))
+    fig.add_trace(go.Scatter(
+        x=data.index, y=data['Lower Band'],
+        mode='lines', name='Bollinger Bas',
+        line=dict(color='green', width=1, dash='dot')
+    ))
+
+    # Ajouter les signaux d'achat et de vente
+    buy_signals = data[data['Signal'] == 1]
+    sell_signals = data[data['Signal'] == -1]
+
+    fig.add_trace(go.Scatter(
+        x=buy_signals.index, y=buy_signals['Close'],
+        mode='markers', name='Achat',
+        marker=dict(color='green', size=8, symbol='triangle-up')
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=sell_signals.index, y=sell_signals['Close'],
+        mode='markers', name='Vente',
+        marker=dict(color='red', size=8, symbol='triangle-down')
+    ))
+
+    # Mise en page du graphique
+    fig.update_layout(title="📈 Graphique des prix avec indicateurs techniques", xaxis_title="Date", yaxis_title="Prix", xaxis_rangeslider_visible=False)
+    
+    # Affichage du graphique
+    st.plotly_chart(fig)
