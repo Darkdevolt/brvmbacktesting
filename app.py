@@ -160,6 +160,23 @@ def plot_results(data):
     fig.update_layout(height=800, title_text="Analyse Complète")
     st.plotly_chart(fig)
 
+def plot_capital_evolution(data):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=data.index, 
+        y=data['Capital'], 
+        name="Capital",
+        line=dict(color='#00CC96', width=3)
+    ))
+    fig.update_layout(
+        title="Évolution du Capital",
+        xaxis_title="Date",
+        yaxis_title="Montant (CFA)",
+        template='plotly_white',
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig)
+
 # 7. Interface Streamlit
 st.title("Backtesting BRVM Pro")
 st.sidebar.header("Configuration")
