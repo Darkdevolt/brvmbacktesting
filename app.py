@@ -2,22 +2,27 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Fonction de nettoyage des données avec correction des séparateurs
+# Fonction de correction des prix
+def corriger_prix(val):
+    try:
+        val = str(val).replace(".", "")  # Supprime le point
+        return int(val)  # Convertit en entier
+    except:
+        return val  # Si erreur, on garde la valeur originale
+
+# Fonction de nettoyage des données
 def nettoyer_fichier(uploaded_file):
     try:
-        # Chargement du fichier CSV ou Excel
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
-        else:
-            df = pd.read_excel(uploaded_file)
+        # Chargement du fichier CSV
+        df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
 
-        # Renommage des colonnes
+        # Renommage des colonnes (ajuster selon le fichier réel)
         df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
 
-        # Correction des nombres en supprimant le point
-        cols_a_corriger = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
-        for col in cols_a_corriger:
-            df[col] = df[col].astype(str).str.replace('.', '', regex=False).astype(int)  # Suppression du point et conversion en entier
+        # Correction des prix sur les bonnes colonnes
+        colonnes_prix = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
+        for col in colonnes_prix:
+            df[col] = df[col].apply(corriger_prix)
 
         # Correction des dates
         df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
@@ -30,7 +35,7 @@ def nettoyer_fichier(uploaded_file):
 # Interface Streamlit
 st.title("Nettoyage des Données de Bourse")
 
-uploaded_file = st.file_uploader("Uploader un fichier CSV ou Excel", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("Uploader un fichier CSV", type=["csv"])
 
 if uploaded_file is not None:
     df_propre = nettoyer_fichier(uploaded_file)
