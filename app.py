@@ -1,21 +1,27 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
+import streamlit as st
 import pandas as pd
+import numpy as np
 
-# Lancez un navigateur, par exemple Chrome via le driver
-driver = webdriver.Chrome()
+st.title("Traitement de fichiers CSV")
 
-# Accéder à la page
-driver.get("URL_de_la_page")
+# Upload du fichier CSV
+uploaded_file = st.file_uploader("Choisissez un fichier CSV", type="csv")
 
-# Patientez le temps que le JavaScript charge la table (éventuellement un WebDriverWait)
-table = driver.find_element(By.TAG_NAME, "table")
+if uploaded_file is not None:
+    # Lire le fichier CSV
+    df = pd.read_csv(uploaded_file)
 
-# Récupérer le HTML de la table
-html_table = table.get_attribute('outerHTML')
+    # Afficher les données brutes
+    st.write("Données brutes")
+    st.write(df)
 
-# Parsez le HTML récupéré
-df = pd.read_html(html_table)[0]
-print(df.head())
+    # Traitement des données (exemple : trier par une colonne)
+    st.write("Données triées par la première colonne")
+    sorted_df = df.sort_values(by=df.columns[0])
+    st.write(sorted_df)
 
-driver.quit()
+    # Exemple de traitement supplémentaire (calcul de la moyenne d'une colonne)
+    if df.select_dtypes(include=[np.number]).columns.any():
+        numeric_column = st.selectbox("Sélectionnez une colonne numérique pour calculer la moyenne", df.select_dtypes(include=[np.number]).columns)
+        mean_value = df[numeric_column].mean()
+        st.write(f"La moyenne de la colonne {numeric_column} est : {mean_value}")
