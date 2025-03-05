@@ -2,8 +2,7 @@ import streamlit as st
 import csv
 import io
 
-def process_data(file):
-    # Lire le fichier CSV sans transformation automatique
+def process_and_save_file(file):
     file_content = file.getvalue().decode("utf-8")
     reader = csv.reader(io.StringIO(file_content), delimiter=',', quotechar='"')
 
@@ -14,41 +13,54 @@ def process_data(file):
     headers = [col.strip().replace('\ufeff', '') for col in data[0]]
     rows = data[1:]  # Toutes les lignes sauf l'en-tête
 
-    # Remplacement du séparateur dans les colonnes concernées
+    # Trouver les indices des colonnes concernées
     numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
     vol_col = "Vol."
 
-    # Trouver les indices des colonnes concernées
     col_indices = {col: headers.index(col) for col in numeric_cols if col in headers}
     vol_index = headers.index(vol_col) if vol_col in headers else None
 
-    # Traiter chaque ligne
+    # Création du nouveau fichier CSV en mémoire
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+
+    # Réécriture des données avec les bonnes valeurs
+    writer.writerow(headers)  # Écrire l'en-tête
     for row in rows:
-        # Remplacement des points par des virgules dans les colonnes numériques
+        new_row = row.copy()  # Copier la ligne originale
+
+        # Modifier les colonnes numériques : remplacer "." par ","
         for col, idx in col_indices.items():
-            row[idx] = row[idx].replace('.', ',')  # Remplacer . par ,
+            new_row[idx] = new_row[idx].replace('.', ',')  # Remplacer le point par une virgule
 
-        # Convertir les volumes en supprimant 'K' et en multipliant par 1000
-        if vol_index is not None:
-            if 'K' in row[vol_index]:
-                row[vol_index] = str(int(float(row[vol_index].replace('K', '').replace(',', '.')) * 1000))
+        # Modifier la colonne "Vol." : enlever 'K' et multiplier par 1000
+        if vol_index is not None and 'K' in new_row[vol_index]:
+            new_row[vol_index] = str(int(float(new_row[vol_index].replace('K', '').replace(',', '.')) * 1000))
 
-    return [headers] + rows  # Retourner les données avec l'en-tête
+        writer.writerow(new_row)  # Écrire la ligne modifiée
+
+    return output.getvalue()  # Retourner le contenu du fichier corrigé
 
 def main():
-    st.title("Traitement de CSV - Application BRVM")
+    st.title("Traitement et Correction de CSV")
     uploaded_file = st.file_uploader("Choisir un fichier CSV", type=["csv"])
     
     if uploaded_file is not None:
         try:
-            processed_data = process_data(uploaded_file)
+            new_csv_content = process_and_save_file(uploaded_file)
             
-            # Afficher le tableau formaté
-            st.write("Données traitées :")
-            st.dataframe(processed_data)
-            
+            # Bouton de téléchargement
+            st.download_button(
+                label="Télécharger le fichier corrigé",
+                data=new_csv_content,
+                file_name="fichier_corrige.csv",
+                mime="text/csv"
+            )
+
+            st.success("Le fichier est prêt à être téléchargé !")
+
         except Exception as e:
-            st.error(f"Erreur lors du traitement du fichier : {e}")
+            st.error(f"Erreur lors du traitement : {e}")
 
 if __name__ == '__main__':
     main()
