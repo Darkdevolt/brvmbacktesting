@@ -1,36 +1,33 @@
-import requests
-from bs4 import BeautifulSoup
+import streamlit as st
 import pandas as pd
+import investpy
 
-# URL de la page à scraper
-url = 'https://fr.investing.com/indices/brvm-composite-historical-data'
+# Fonction pour récupérer les données historiques d'une action
+def get_historical_data(stock_name, country, from_date, to_date):
+    try:
+        data = investpy.get_stock_historical_data(stock=stock_name,
+                                                  country=country,
+                                                  from_date=from_date,
+                                                  to_date=to_date)
+        return data
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des données : {e}")
+        return None
 
-# En-têtes pour la requête HTTP
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+# Interface utilisateur Streamlit
+st.title("Données Historiques des Actions de la BRVM")
 
-# Effectuer la requête GET
-response = requests.get(url, headers=headers)
-response.raise_for_status()  # Vérifier que la requête a réussi
+# Sélection de l'action
+stock_name = st.text_input("Nom de l'action (ex: 'BOAS')", "BOAS")
 
-# Parser le contenu HTML
-soup = BeautifulSoup(response.text, 'html.parser')
+# Dates de début et de fin
+from_date = st.date_input("Date de début", pd.to_datetime("2022-01-01"))
+to_date = st.date_input("Date de fin", pd.to_datetime("2023-01-01"))
 
-# Trouver le tableau contenant les données historiques
-table = soup.find('table', {'id': 'curr_table'})
-
-# Extraire les en-têtes du tableau
-headers = [header.text.strip() for header in table.find_all('th')]
-
-# Extraire les lignes du tableau
-rows = []
-for row in table.find_all('tr')[1:]:
-    cols = [col.text.strip() for col in row.find_all('td')]
-    if cols:
-        rows.append(cols)
-
-# Créer un DataFrame pandas
-df = pd.DataFrame(rows, columns=headers)
-
-# Afficher le DataFrame
-print(df)
+# Bouton pour récupérer les données
+if st.button("Récupérer les données"):
+    data = get_historical_data(stock_name, 'cote d\'ivoire', from_date.strftime('%d/%m/%Y'), to_date.strftime('%d/%m/%Y'))
+    if data is not None:
+        st.write(f"Données pour l'action {stock_name} de la BRVM")
+        st.dataframe(data)
+        st.line_chart(data['Close'])
