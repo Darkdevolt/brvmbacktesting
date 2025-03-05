@@ -1,81 +1,73 @@
 import streamlit as st
 import pandas as pd
-import os
+import io
 
-# Configuration de la page
-st.set_page_config(page_title="Backtesting BRVM", layout="wide")
+# Fonction de nettoyage des données
+def nettoyer_fichier(uploaded_file):
+    try:
+        # Détecter si c'est un CSV ou un Excel
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
+        else:
+            xls = pd.ExcelFile(uploaded_file)
+            df = pd.read_excel(xls, sheet_name=xls.sheet_names[0])
 
-st.title("📈 Backtesting sur NTLC - BRVM")
+        # Vérifier si les données sont mal stockées en une seule colonne
+        if df.shape[1] == 1:
+            df = df.iloc[:, 0].str.split(',', expand=True)
 
-# Upload du fichier CSV ou Excel
-uploaded_file = st.file_uploader("Upload ton fichier de données (CSV ou Excel)", type=["csv", "xls", "xlsx"])
+        # Renommer les colonnes correctement
+        df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"] + \
+                     [f"Colonne_{i}" for i in range(7, df.shape[1])]
+
+        # Supprimer les colonnes inutiles si elles existent
+        df = df[["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"]]
+
+        # Fonction pour nettoyer les valeurs numériques
+        def clean_numeric(value):
+            if isinstance(value, str):
+                value = value.replace('"', '').replace(' ', '').replace('K', '000').replace('%', '')
+                try:
+                    return float(value) / 100 if '%' in value else float(value)
+                except ValueError:
+                    return None  # Si la valeur est incorrecte
+            return value
+
+        # Appliquer la correction sur toutes les colonnes sauf la date
+        for col in ["Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"]:
+            df[col] = df[col].apply(clean_numeric)
+
+        # Convertir la colonne Date en format datetime
+        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors='coerce')
+
+        return df
+    except Exception as e:
+        st.error(f"Erreur lors du nettoyage du fichier : {e}")
+        return None
+
+# Interface Streamlit
+st.title("Nettoyage et Visualisation des Données CSV/Excel")
+
+# Upload du fichier
+uploaded_file = st.file_uploader("Uploader un fichier CSV ou Excel", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Extraction de l'extension du fichier
-    filename = uploaded_file.name.lower()
-    file_extension = os.path.splitext(filename)[1]
+    df_propre = nettoyer_fichier(uploaded_file)
 
-    try:
-        # Lecture du fichier selon son format
-        if file_extension == ".csv":
-            try:
-                data = pd.read_csv(uploaded_file, encoding="utf-8", delimiter=";", error_bad_lines=False)
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la lecture du fichier CSV : {e}")
-                st.stop()
-        
-        elif file_extension in [".xls", ".xlsx"]:
-            try:
-                data = pd.read_excel(uploaded_file, engine="openpyxl")
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la lecture du fichier Excel : {e}")
-                st.stop()
+    if df_propre is not None:
+        st.success("Fichier traité avec succès !")
+        st.write("### Données Nettoyées :")
+        st.dataframe(df_propre)
 
-        else:
-            st.error("❌ Format de fichier non supporté. Veuillez uploader un fichier CSV ou Excel.")
-            st.stop()
+        # Télécharger le fichier nettoyé
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_propre.to_excel(writer, index=False, sheet_name="Données Nettoyées")
+        processed_data = output.getvalue()
 
-        # Affichage des premières lignes pour vérifier les colonnes
-        st.subheader("📊 Aperçu des données chargées")
-        st.write(data.head())
-
-        # Vérification automatique des colonnes
-        st.subheader("✅ Vérification des colonnes")
-        st.write("Colonnes détectées :", list(data.columns))
-
-        # Tentative d'auto-détection de la colonne de date
-        date_columns = [col for col in data.columns if "date" in col.lower()]
-        if date_columns:
-            date_col = date_columns[0]
-            try:
-                data[date_col] = pd.to_datetime(data[date_col], errors="coerce")
-                st.success(f"📅 Colonne date détectée : **{date_col}** et convertie en format datetime.")
-            except Exception as e:
-                st.error(f"❌ Erreur de conversion de la colonne Date : {e}")
-                st.stop()
-        else:
-            st.error("❌ Aucune colonne Date trouvée. Vérifiez votre fichier.")
-            st.stop()
-
-        # Vérification et correction des types de colonnes
-        for col in data.columns:
-            if data[col].dtype == "object":
-                try:
-                    data[col] = pd.to_numeric(data[col].str.replace(",", ".").str.replace(" ", ""), errors="coerce")
-                except:
-                    pass
-
-        # Détection de la colonne "Clôture" ou "Close" pour le graphique
-        possible_price_cols = [col for col in data.columns if "clôture" in col.lower() or "close" in col.lower()]
-        if possible_price_cols:
-            price_col = possible_price_cols[0]
-            st.subheader("📉 Évolution des prix de clôture")
-            st.line_chart(data.set_index(date_col)[price_col])
-        else:
-            st.error("❌ Impossible de détecter une colonne de prix de clôture. Vérifiez votre fichier.")
-
-    except Exception as e:
-        st.error(f"❌ Erreur inattendue : {e}")
-
-else:
-    st.info("📤 Charge un fichier CSV ou Excel pour commencer l'analyse.")
+        st.download_button(
+            label="Télécharger le fichier nettoyé",
+            data=processed_data,
+            file_name="data_propre.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
