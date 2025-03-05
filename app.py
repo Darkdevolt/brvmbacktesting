@@ -91,6 +91,25 @@ def plot_results(data):
     fig.update_layout(height=800, title_text="Résultats du Backtesting")
     st.plotly_chart(fig)
 
+# Fonction pour afficher les trades dans un tableau
+def display_trades_table(data):
+    # Filtrer les trades (achats et ventes)
+    trades = data[data['Signal'] != 0][['Signal', 'Position', 'close', 'Trade_Result']]
+    trades['Type'] = trades['Position'].apply(lambda x: 'Achat' if x == 'Buy' else 'Vente')
+    trades['Résultat (%)'] = trades['Trade_Result']
+    trades['Prix'] = trades['close']
+    
+    # Sélectionner les colonnes à afficher
+    trades_table = trades[['Type', 'Prix', 'Résultat (%)']]
+    trades_table.index.name = 'Date'
+    
+    # Afficher le tableau
+    st.write("**Détails des Trades :**")
+    st.dataframe(trades_table.style.format({
+        'Prix': '{:.2f}',
+        'Résultat (%)': '{:.2f}%'
+    }))
+
 # Interface Streamlit
 st.title("Backtesting de Stratégie de Trading sur la BRVM (Sans Short Selling)")
 st.sidebar.header("Paramètres")
@@ -134,5 +153,8 @@ if uploaded_file is not None:
     # Affichage des graphiques
     st.write("**Graphiques :**")
     plot_results(data)
+
+    # Affichage des trades dans un tableau
+    display_trades_table(data)
 else:
     st.write("Veuillez télécharger un fichier CSV pour commencer.")
