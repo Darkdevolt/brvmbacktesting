@@ -2,37 +2,30 @@ import streamlit as st
 import pandas as pd
 
 def process_data(file):
-    # Lecture du CSV en spécifiant le séparateur et le quotechar
-    df = pd.read_csv(file, quotechar='"', sep=',')
+    # Lecture du CSV avec reconnaissance automatique du séparateur de milliers
+    df = pd.read_csv(file, quotechar='"', sep=',', thousands='.')
     
     # Nettoyage des noms de colonnes : suppression d'espaces inutiles et du BOM
     df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
     st.write("Colonnes du fichier :", df.columns.tolist())
     
-    # Traitement des colonnes numériques (le point est un séparateur de milliers)
+    # Conversion des colonnes numériques déjà lues comme nombres (float) en entier
     numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
     for col in numeric_cols:
-        df[col] = df[col].astype(str)
-        df[col] = df[col].str.replace('.', '', regex=False)
-        # Conversion en nombre et remplacement des valeurs non convertibles par 0
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        df[col] = df[col].fillna(0).astype(int)
     
     # Traitement de la colonne "Vol."
-    df["Vol."] = df["Vol."].astype(str)
-    df["Vol."] = df["Vol."].str.replace(',', '.', regex=False)
+    # Les valeurs de Vol. sont au format "3,13K" (virgule pour la décimale)
+    df["Vol."] = df["Vol."].astype(str).str.replace(',', '.', regex=False)
     
     def convert_vol(x):
-        try:
-            if 'K' in x:
-                return float(x.replace('K', '')) * 1000
-            else:
-                return float(x)
-        except:
-            return None
-
+        if 'K' in x:
+            return float(x.replace('K','')) * 1000
+        else:
+            return float(x)
+    
     df["Vol."] = df["Vol."].apply(convert_vol)
-    # Remplacement des éventuels NaN par 0, puis conversion en entier
-    df["Vol."] = pd.to_numeric(df["Vol."], errors='coerce').fillna(0).astype(int)
+    df["Vol."] = df["Vol."].fillna(0).astype(int)
     
     return df
 
@@ -47,4 +40,4 @@ def main():
             st.error(f"Erreur lors du traitement du fichier : {e}")
 
 if __name__ == '__main__':
-    main() 
+    main()
