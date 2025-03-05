@@ -1,4 +1,35 @@
+# Streamlit : pour créer l'application web
 streamlit==1.18.1
+
+# Pandas : pour manipuler les données
 pandas==1.5.3
+
+# Numpy : pour le calcul scientifique
+numpy==1.23.5
+
+# Requests : pour les requêtes HTTP (scraping, API, etc.)
 requests==2.28.1
+
+# BeautifulSoup : pour parser du HTML et extraire des données (scraping)
 beautifulsoup4==4.12.2
+
+# lxml et html5lib : parseurs HTML/XML supplémentaires, utiles pour BeautifulSoup
+lxml==4.9.2
+html5lib==1.1
+
+# Investpy : pour récupérer des données financières depuis Investing.com
+investpy==1.0.7
+
+# openpyxl et xlsxwriter : pour lire/écrire des fichiers Excel
+openpyxl==3.1.2
+xlsxwriter==3.0.3
+
+# Matplotlib : pour la visualisation de données
+matplotlib==3.6.2
+
+# Plotly : pour la visualisation interactive
+plotly==5.13.1
+
+# SciPy et Scikit-learn : pour le calcul scientifique et l'apprentissage automatique
+scipy==1.9.3
+scikit-learn==1.2.2
