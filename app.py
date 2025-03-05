@@ -74,4 +74,4 @@ if uploaded_file is not None:
             data=processed_data,
             file_name="data_propre.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        
