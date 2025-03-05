@@ -7,20 +7,32 @@ def process_data(file):
     
     # Nettoyage des noms de colonnes : suppression d'espaces inutiles et du BOM
     df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
-    
-    # Affichage des noms de colonnes pour vérifier qu'ils correspondent
     st.write("Colonnes du fichier :", df.columns.tolist())
     
-    # Liste des colonnes numériques à traiter (séparateur de milliers : le point)
+    # Liste des colonnes numériques à traiter (le point est un séparateur de milliers)
     numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
     for col in numeric_cols:
-        # Suppression du point servant de séparateur de milliers
-        # Attention : "9.300" doit devenir 9300 et non 9.3
-        df[col] = df[col].str.replace('.', '', regex=False).astype(int)
+        # On s'assure que la colonne est traitée comme chaîne de caractères
+        df[col] = df[col].astype(str)
+        # Suppression du point servant de séparateur de milliers (ex: "9.300" -> "9300")
+        df[col] = df[col].str.replace('.', '', regex=False)
+        # Conversion en nombre entier
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
     
-    # Traitement de la colonne "Vol." : conversion de la virgule en point et multiplication si 'K' est présent
+    # Traitement de la colonne "Vol." :
+    # 1. Convertir la colonne en chaîne de caractères
+    df["Vol."] = df["Vol."].astype(str)
+    # 2. Remplacer la virgule par un point pour gérer la partie décimale
     df["Vol."] = df["Vol."].str.replace(',', '.', regex=False)
-    df["Vol."] = df["Vol."].apply(lambda x: float(x.replace('K', '')) * 1000 if 'K' in x else float(x)).astype(int)
+    # 3. Conversion : si la valeur contient 'K', multiplier par 1000
+    def convert_vol(x):
+        if 'K' in x:
+            # Enlever le 'K' et multiplier par 1000
+            return float(x.replace('K', '')) * 1000
+        else:
+            return float(x)
+    
+    df["Vol."] = df["Vol."].apply(convert_vol).astype(int)
     
     return df
 
