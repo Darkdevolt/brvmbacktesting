@@ -16,8 +16,7 @@ def process_data(file):
 
     for col in numeric_cols:
         if col in df.columns:
-            df[col] = df[col].str.replace('.', '', regex=False)  # Supprimer les points de séparation
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)  # Convertir en entier
+            df[col] = df[col].str.replace('.', ',', regex=False)  # Remplacer le point par une virgule
 
     # Traitement de la colonne "Vol."
     if "Vol." in df.columns:
