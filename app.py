@@ -5,22 +5,22 @@ import io
 # Fonction de nettoyage des données
 def nettoyer_fichier(uploaded_file):
     try:
-        # Charger les données (CSV ou Excel)
+        # Détection du format du fichier
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
         else:
             xls = pd.ExcelFile(uploaded_file)
             df = pd.read_excel(xls, sheet_name=xls.sheet_names[0])
 
-        # Renommer les colonnes si nécessaire
+        # Renommage des colonnes pour correspondre aux données attendues
         df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
 
-        # Correction des valeurs numériques
+        # Conversion des valeurs en nombres et multiplication par 1000
         cols_a_corriger = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
         for col in cols_a_corriger:
-            df[col] = pd.to_numeric(df[col], errors='coerce') * 1000  # Multiplication par 1000
+            df[col] = df[col].astype(str).str.replace(',', '.').astype(float) * 1000  # Correction de la séparation décimale
 
-        # Convertir la date
+        # Correction des dates
         df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
 
         return df
