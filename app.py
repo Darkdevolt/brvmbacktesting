@@ -93,8 +93,14 @@ st.sidebar.header("Paramètres")
 # Chargement des données
 uploaded_file = st.sidebar.file_uploader("Téléchargez votre fichier CSV", type=["csv"])
 if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date', format='%m/%d/%y')
-    data.columns = data.columns.str.strip().str.lower()  # Normaliser les noms des colonnes
+    # Lire le fichier CSV
+    data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date')
+    
+    # Convertir la colonne 'Date' en format datetime avec le bon format
+    data.index = pd.to_datetime(data.index, format='%m/%d/%y')
+    
+    # Normaliser les noms des colonnes (supprimer les espaces et convertir en minuscules)
+    data.columns = data.columns.str.strip().str.lower()
 
     st.write("**Aperçu des données :**")
     st.write(data.head())
