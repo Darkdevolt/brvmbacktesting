@@ -29,29 +29,45 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=
     data['Actions_Detenues'] = 0  # Nombre d'actions détenues
     capital = montant_investi  # Capital courant
     actions_detenues = 0  # Nombre d'actions détenues
+    prix_moyen_achat = 0.0  # Prix moyen d'achat des actions détenues
 
     for i in range(1, len(data)):
-        if actions_detenues == 0:
-            # Condition d'entrée : Croisement de moyennes mobiles (achat)
-            if data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]:
+        # Condition d'achat : Croisement de moyennes mobiles
+        if data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]:
+            if actions_detenues == 0:
+                # Premier achat
                 data.at[data.index[i], 'Signal'] = 1
                 prix_achat = data['close'].iloc[i]
                 actions_detenues = capital // prix_achat  # Acheter autant d'actions que possible
                 capital -= actions_detenues * prix_achat  # Mettre à jour le capital
+                prix_moyen_achat = prix_achat  # Initialiser le prix moyen d'achat
                 data.at[data.index[i], 'Position'] = 'Buy'
                 data.at[data.index[i], 'Actions_Detenues'] = actions_detenues
-        else:
-            # Conditions de sortie : Stop-loss ou Take-profit (vente)
+            else:
+                # Renforcer l'achat (acheter davantage)
+                data.at[data.index[i], 'Signal'] = 1
+                prix_achat = data['close'].iloc[i]
+                nouvelles_actions = capital // prix_achat  # Acheter autant d'actions que possible
+                capital -= nouvelles_actions * prix_achat  # Mettre à jour le capital
+                # Mettre à jour le prix moyen d'achat
+                prix_moyen_achat = (prix_moyen_achat * actions_detenues + prix_achat * nouvelles_actions) / (actions_detenues + nouvelles_actions)
+                actions_detenues += nouvelles_actions  # Mettre à jour le nombre d'actions détenues
+                data.at[data.index[i], 'Position'] = 'Buy'
+                data.at[data.index[i], 'Actions_Detenues'] = actions_detenues
+
+        # Conditions de vente : Stop-loss ou Take-profit
+        if actions_detenues > 0:
             current_price = data['close'].iloc[i]
-            stop_loss_price = prix_achat * (1 - stop_loss_pct / 100)
-            take_profit_price = prix_achat * (1 + take_profit_pct / 100)
+            stop_loss_price = prix_moyen_achat * (1 - stop_loss_pct / 100)
+            take_profit_price = prix_moyen_achat * (1 + take_profit_pct / 100)
 
             if current_price <= stop_loss_price or current_price >= take_profit_price:
                 data.at[data.index[i], 'Signal'] = -1
                 capital += actions_detenues * current_price  # Vendre toutes les actions
-                trade_result = (current_price - prix_achat) / prix_achat * 100
+                trade_result = (current_price - prix_moyen_achat) / prix_moyen_achat * 100
                 data.at[data.index[i], 'Trade_Result'] = trade_result
                 actions_detenues = 0  # Plus d'actions détenues
+                prix_moyen_achat = 0.0  # Réinitialiser le prix moyen d'achat
                 data.at[data.index[i], 'Position'] = 'Sell'
                 data.at[data.index[i], 'Actions_Detenues'] = 0
 
