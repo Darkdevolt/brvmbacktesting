@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
+import ta  # Utilisation de la bibliothèque ta
 import plotly.graph_objects as go
 
 # Titre de l'application
@@ -35,13 +35,13 @@ if uploaded_file is not None:
     data['Date'] = pd.to_datetime(data['Date'])
     data.set_index('Date', inplace=True)
 
-    # Calcul des indicateurs techniques avec pandas_ta
-    data['RSI'] = ta.rsi(data['Close'], length=rsi_period)
-    data['MA'] = ta.sma(data['Close'], length=ma_period)
-    bb = ta.bbands(data['Close'], length=bb_period, std=bb_std)
-    data['Upper Band'] = bb['BBU_5_2.0']
-    data['Middle Band'] = bb['BBM_5_2.0']
-    data['Lower Band'] = bb['BBL_5_2.0']
+    # Calcul des indicateurs techniques avec ta
+    data['RSI'] = ta.momentum.rsi(data['Close'], window=rsi_period)
+    data['MA'] = ta.trend.sma_indicator(data['Close'], window=ma_period)
+    bb = ta.volatility.BollingerBands(data['Close'], window=bb_period, window_dev=bb_std)
+    data['Upper Band'] = bb.bollinger_hband()
+    data['Middle Band'] = bb.bollinger_mavg()
+    data['Lower Band'] = bb.bollinger_lband()
 
     # Génération des signaux
     data['Signal'] = 0
