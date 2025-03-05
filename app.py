@@ -20,24 +20,24 @@ def calculate_rsi(prices, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# Fonction pour simuler la stratégie
+# Fonction pour simuler la stratégie (sans short selling)
 def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4):
-    data['Signal'] = 0
-    data['Trade_Result'] = 0.0
-    data['Position'] = None
-    in_position = False
-    entry_price = 0.0
+    data['Signal'] = 0  # 1 pour acheter, -1 pour vendre, 0 pour rien faire
+    data['Trade_Result'] = 0.0  # Résultat de chaque trade
+    data['Position'] = None  # Position actuelle (None, 'Buy', 'Sell')
+    in_position = False  # Indique si on détient l'actif
+    entry_price = 0.0  # Prix d'entrée
 
     for i in range(1, len(data)):
         if not in_position:
-            # Condition d'entrée : Croisement de moyennes mobiles
+            # Condition d'entrée : Croisement de moyennes mobiles (achat)
             if data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]:
                 data.at[data.index[i], 'Signal'] = 1
                 entry_price = data['close'].iloc[i]
                 in_position = True
                 data.at[data.index[i], 'Position'] = 'Buy'
         else:
-            # Conditions de sortie : Stop-loss ou Take-profit
+            # Conditions de sortie : Stop-loss ou Take-profit (vente)
             current_price = data['close'].iloc[i]
             stop_loss_price = entry_price * (1 - stop_loss_pct / 100)
             take_profit_price = entry_price * (1 + take_profit_pct / 100)
@@ -59,40 +59,40 @@ def display_results(data, montant_investi):
     win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
     total_profit = data['Trade_Result'].sum()
     
-    # Calcul du résultat final en fonction du montant investi
+    # Calcul du résultat final en fonction du montant investi en CFA
     resultat_final = montant_investi * (1 + total_profit / 100)
 
-    st.write(f"**Total Trades:** {total_trades}")
-    st.write(f"**Winning Trades:** {winning_trades}")
-    st.write(f"**Losing Trades:** {losing_trades}")
-    st.write(f"**Win Rate:** {win_rate:.2f}%")
-    st.write(f"**Total Profit:** {total_profit:.2f}%")
-    st.write(f"**Montant Investi:** {montant_investi:.2f} €")
-    st.write(f"**Résultat Final:** {resultat_final:.2f} €")
+    st.write(f"**Total des Trades :** {total_trades}")
+    st.write(f"**Trades Gagnants :** {winning_trades}")
+    st.write(f"**Trades Perdants :** {losing_trades}")
+    st.write(f"**Taux de Réussite :** {win_rate:.2f}%")
+    st.write(f"**Profit Total :** {total_profit:.2f}%")
+    st.write(f"**Montant Investi :** {montant_investi:.2f} CFA")
+    st.write(f"**Résultat Final :** {resultat_final:.2f} CFA")
 
 # Fonction pour afficher les graphiques
 def plot_results(data):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
 
     # Graphique des prix et des indicateurs
-    fig.add_trace(go.Scatter(x=data.index, y=data['close'], name='Close Price'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Short'], name='MA Short'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Long'], name='MA Long'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['close'], name='Prix de Clôture'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Short'], name='Moyenne Mobile Courte'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Long'], name='Moyenne Mobile Longue'), row=1, col=1)
 
     # Graphique des trades
     buy_signals = data[data['Position'] == 'Buy']
     sell_signals = data[data['Position'] == 'Sell']
-    fig.add_trace(go.Scatter(x=buy_signals.index, y=buy_signals['close'], mode='markers', name='Buy', marker=dict(color='green', size=10)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=sell_signals.index, y=sell_signals['close'], mode='markers', name='Sell', marker=dict(color='red', size=10)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=buy_signals.index, y=buy_signals['close'], mode='markers', name='Achat', marker=dict(color='green', size=10)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sell_signals.index, y=sell_signals['close'], mode='markers', name='Vente', marker=dict(color='red', size=10)), row=1, col=1)
 
     # Graphique du RSI
     fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI'), row=2, col=1)
 
-    fig.update_layout(height=800, title_text="Backtesting Results")
+    fig.update_layout(height=800, title_text="Résultats du Backtesting")
     st.plotly_chart(fig)
 
 # Interface Streamlit
-st.title("Backtesting de Stratégie de Trading")
+st.title("Backtesting de Stratégie de Trading sur la BRVM (Sans Short Selling)")
 st.sidebar.header("Paramètres")
 
 # Chargement des données
@@ -121,7 +121,7 @@ if uploaded_file is not None:
     long_window = st.sidebar.number_input("Moyenne mobile longue (jours)", value=50)
     stop_loss_pct = st.sidebar.number_input("Stop-loss (%)", value=2.0)
     take_profit_pct = st.sidebar.number_input("Take-profit (%)", value=4.0)
-    montant_investi = st.sidebar.number_input("Montant Investi (€)", value=1000.0)
+    montant_investi = st.sidebar.number_input("Montant Investi (CFA)", value=100000.0)  # Montant en CFA
 
     # Calcul des indicateurs et simulation de la stratégie
     data = calculate_indicators(data, short_window, long_window)
