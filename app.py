@@ -2,31 +2,41 @@ import streamlit as st
 import pandas as pd
 
 def process_data(file):
-    # Lecture du CSV avec reconnaissance automatique du séparateur de milliers
-    df = pd.read_csv(file, quotechar='"', sep=',', thousands='.')
+    # Lecture du CSV en spécifiant simplement le séparateur et le quotechar
+    df = pd.read_csv(file, sep=',', quotechar='"')
     
     # Nettoyage des noms de colonnes : suppression d'espaces inutiles et du BOM
     df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
+    
+    # Pour vérifier les noms de colonnes détectés
     st.write("Colonnes du fichier :", df.columns.tolist())
     
-    # Conversion des colonnes numériques déjà lues comme nombres (float) en entier
+    # Colonnes numériques à convertir (où le point est un séparateur de milliers)
     numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
     for col in numeric_cols:
-        df[col] = df[col].fillna(0).astype(int)
+        # 1) Convertir en chaîne (pour être sûr de pouvoir remplacer)
+        df[col] = df[col].astype(str)
+        # 2) Supprimer le point (séparateur de milliers), ex: "9.300" -> "9300"
+        df[col] = df[col].str.replace('.', '', regex=False)
+        # 3) Convertir en entier. Ainsi "9300" devient l’entier 9300 (et non 93).
+        #    Les valeurs non convertibles deviennent NaN, qu'on remplace par 0 si besoin.
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
     
     # Traitement de la colonne "Vol."
-    # Les valeurs de Vol. sont au format "3,13K" (virgule pour la décimale)
-    df["Vol."] = df["Vol."].astype(str).str.replace(',', '.', regex=False)
+    # Exemple : "3,13K" -> remplacer ',' par '.' -> "3.13K" -> multiplier par 1000 -> 3130
+    df["Vol."] = df["Vol."].astype(str)
+    df["Vol."] = df["Vol."].str.replace(',', '.', regex=False)
     
-    def convert_vol(x):
-        if 'K' in x:
-            return float(x.replace('K','')) * 1000
+    def convert_vol(val):
+        if 'K' in val:
+            # Enlever 'K' et multiplier par 1000
+            return float(val.replace('K', '')) * 1000
         else:
-            return float(x)
-    
+            return float(val)
+
     df["Vol."] = df["Vol."].apply(convert_vol)
     df["Vol."] = df["Vol."].fillna(0).astype(int)
-    
+
     return df
 
 def main():
