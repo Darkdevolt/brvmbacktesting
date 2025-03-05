@@ -21,33 +21,42 @@ def calculate_rsi(prices, window=14):
     return rsi
 
 # Fonction pour simuler la stratégie (sans short selling)
-def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4):
+def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi):
     data['Signal'] = 0  # 1 pour acheter, -1 pour vendre, 0 pour rien faire
     data['Trade_Result'] = 0.0  # Résultat de chaque trade
     data['Position'] = None  # Position actuelle (None, 'Buy', 'Sell')
-    in_position = False  # Indique si on détient l'actif
-    entry_price = 0.0  # Prix d'entrée
+    data['Capital'] = montant_investi  # Capital initial
+    data['Actions_Detenues'] = 0  # Nombre d'actions détenues
+    capital = montant_investi  # Capital courant
+    actions_detenues = 0  # Nombre d'actions détenues
 
     for i in range(1, len(data)):
-        if not in_position:
+        if actions_detenues == 0:
             # Condition d'entrée : Croisement de moyennes mobiles (achat)
             if data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]:
                 data.at[data.index[i], 'Signal'] = 1
-                entry_price = data['close'].iloc[i]
-                in_position = True
+                prix_achat = data['close'].iloc[i]
+                actions_detenues = capital // prix_achat  # Acheter autant d'actions que possible
+                capital -= actions_detenues * prix_achat  # Mettre à jour le capital
                 data.at[data.index[i], 'Position'] = 'Buy'
+                data.at[data.index[i], 'Actions_Detenues'] = actions_detenues
         else:
             # Conditions de sortie : Stop-loss ou Take-profit (vente)
             current_price = data['close'].iloc[i]
-            stop_loss_price = entry_price * (1 - stop_loss_pct / 100)
-            take_profit_price = entry_price * (1 + take_profit_pct / 100)
+            stop_loss_price = prix_achat * (1 - stop_loss_pct / 100)
+            take_profit_price = prix_achat * (1 + take_profit_pct / 100)
 
             if current_price <= stop_loss_price or current_price >= take_profit_price:
                 data.at[data.index[i], 'Signal'] = -1
-                trade_result = (current_price - entry_price) / entry_price * 100
+                capital += actions_detenues * current_price  # Vendre toutes les actions
+                trade_result = (current_price - prix_achat) / prix_achat * 100
                 data.at[data.index[i], 'Trade_Result'] = trade_result
-                in_position = False
+                actions_detenues = 0  # Plus d'actions détenues
                 data.at[data.index[i], 'Position'] = 'Sell'
+                data.at[data.index[i], 'Actions_Detenues'] = 0
+
+        # Mettre à jour le capital dans le DataFrame
+        data.at[data.index[i], 'Capital'] = capital + (actions_detenues * data['close'].iloc[i])
 
     return data
 
@@ -60,7 +69,7 @@ def display_results(data, montant_investi):
     total_profit = data['Trade_Result'].sum()
     
     # Calcul du résultat final en fonction du montant investi en CFA
-    resultat_final = montant_investi * (1 + total_profit / 100)
+    resultat_final = data['Capital'].iloc[-1]  # Capital final
 
     st.write(f"**Total des Trades :** {total_trades}")
     st.write(f"**Trades Gagnants :** {winning_trades}")
@@ -110,6 +119,13 @@ def display_trades_table(data):
         'Résultat (%)': '{:.2f}%'
     }))
 
+# Fonction pour afficher l'évolution du capital
+def plot_capital_evolution(data):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data.index, y=data['Capital'], name='Capital', mode='lines'))
+    fig.update_layout(title="Évolution du Capital", xaxis_title="Date", yaxis_title="Capital (CFA)")
+    st.plotly_chart(fig)
+
 # Interface Streamlit
 st.title("Backtesting de Stratégie de Trading sur la BRVM (Sans Short Selling)")
 st.sidebar.header("Paramètres")
@@ -144,7 +160,7 @@ if uploaded_file is not None:
 
     # Calcul des indicateurs et simulation de la stratégie
     data = calculate_indicators(data, short_window, long_window)
-    data = backtest_strategy(data, stop_loss_pct, take_profit_pct)
+    data = backtest_strategy(data, stop_loss_pct, take_profit_pct, montant_investi)
 
     # Affichage des résultats
     st.write("**Résultats de la simulation :**")
@@ -156,5 +172,9 @@ if uploaded_file is not None:
 
     # Affichage des trades dans un tableau
     display_trades_table(data)
+
+    # Affichage de l'évolution du capital
+    st.write("**Évolution du Capital :**")
+    plot_capital_evolution(data)
 else:
     st.write("Veuillez télécharger un fichier CSV pour commencer.")
