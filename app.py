@@ -1,27 +1,38 @@
-import streamlit as st
 import pandas as pd
-import numpy as np
+import streamlit as st
 
-st.title("Traitement de fichiers CSV")
-
-# Upload du fichier CSV
-uploaded_file = st.file_uploader("Choisissez un fichier CSV", type="csv")
-
-if uploaded_file is not None:
+def process_csv(file):
     # Lire le fichier CSV
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_csv(file)
 
-    # Afficher les données brutes
-    st.write("Données brutes")
-    st.write(df)
+    # Traiter les données
+    # Exemple: Multiplier les valeurs de la colonne 'Vol.' par 1000 si elles contiennent 'K'
+    if 'Vol.' in df.columns:
+        df['Vol.'] = df['Vol.'].apply(lambda x: float(x.replace('K', '')) * 1000 if 'K' in str(x) else float(x))
 
-    # Traitement des données (exemple : trier par une colonne)
-    st.write("Données triées par la première colonne")
-    sorted_df = df.sort_values(by=df.columns[0])
-    st.write(sorted_df)
+    return df
 
-    # Exemple de traitement supplémentaire (calcul de la moyenne d'une colonne)
-    if df.select_dtypes(include=[np.number]).columns.any():
-        numeric_column = st.selectbox("Sélectionnez une colonne numérique pour calculer la moyenne", df.select_dtypes(include=[np.number]).columns)
-        mean_value = df[numeric_column].mean()
-        st.write(f"La moyenne de la colonne {numeric_column} est : {mean_value}")
+def main():
+    st.title("Traitement de fichiers CSV")
+
+    # Upload du fichier CSV
+    uploaded_file = st.file_uploader("Téléchargez votre fichier CSV", type=["csv"])
+
+    if uploaded_file is not None:
+        # Traiter le fichier
+        df = process_csv(uploaded_file)
+
+        # Afficher les données traitées
+        st.write("Données traitées:")
+        st.write(df)
+
+        # Option pour télécharger les données traitées
+        st.download_button(
+            label="Télécharger les données traitées",
+            data=df.to_csv(index=False).encode('utf-8'),
+            file_name='donnees_traitees.csv',
+            mime='text/csv',
+        )
+
+if __name__ == "__main__":
+    main()
