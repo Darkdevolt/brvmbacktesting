@@ -18,35 +18,47 @@ if uploaded_file is not None:
     try:
         # Lecture du fichier selon son format
         if file_extension == ".csv":
-            data = pd.read_csv(uploaded_file)
+            data = pd.read_csv(uploaded_file, encoding="utf-8", delimiter=";", error_bad_lines=False)
         elif file_extension in [".xls", ".xlsx"]:
-            data = pd.read_excel(uploaded_file)
+            data = pd.read_excel(uploaded_file, engine="openpyxl")
         else:
             st.error("❌ Format de fichier non supporté. Veuillez uploader un fichier CSV ou Excel.")
             st.stop()
 
-        # Vérification des colonnes
-        expected_columns = ["Date", "Ouverture", "Clôture", "Volume"]
-        missing_columns = [col for col in expected_columns if col not in data.columns]
-
-        if missing_columns:
-            st.error(f"❌ Colonnes manquantes : {missing_columns}. Vérifie le format du fichier.")
-            st.stop()
-
-        # Conversion de la colonne Date
-        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
-
-        # Vérification des valeurs NaN après conversion
-        if data["Date"].isna().sum() > 0:
-            st.warning("⚠️ Certaines dates n'ont pas pu être converties. Vérifie le format de la colonne Date.")
-
-        # Affichage des premières lignes
+        # Affichage des premières lignes pour vérifier les colonnes
         st.subheader("📊 Aperçu des données chargées")
         st.write(data.head())
 
+        # Vérification automatique des colonnes
+        st.subheader("✅ Vérification des colonnes")
+        st.write("Colonnes détectées :", list(data.columns))
+
+        # Tentative d'auto-détection de la colonne de date
+        date_columns = [col for col in data.columns if "date" in col.lower()]
+        if date_columns:
+            date_col = date_columns[0]
+            data[date_col] = pd.to_datetime(data[date_col], errors="coerce")
+            st.success(f"📅 Colonne date détectée : **{date_col}** et convertie en format datetime.")
+        else:
+            st.error("❌ Aucune colonne Date trouvée. Assurez-vous que votre fichier contient une colonne avec 'Date' dans son nom.")
+            st.stop()
+
+        # Vérification et correction des types de colonnes
+        for col in data.columns:
+            if data[col].dtype == "object":
+                try:
+                    data[col] = pd.to_numeric(data[col].str.replace(",", ".").str.replace(" ", ""), errors="coerce")
+                except:
+                    pass
+
         # Graphique simple de l'évolution des prix de clôture
-        st.subheader("📉 Évolution des prix de clôture")
-        st.line_chart(data.set_index("Date")["Clôture"])
+        possible_price_cols = [col for col in data.columns if "clôture" in col.lower() or "close" in col.lower()]
+        if possible_price_cols:
+            price_col = possible_price_cols[0]
+            st.subheader("📉 Évolution des prix de clôture")
+            st.line_chart(data.set_index(date_col)[price_col])
+        else:
+            st.error("❌ Impossible de détecter une colonne de prix de clôture. Vérifiez votre fichier.")
 
     except Exception as e:
         st.error(f"❌ Erreur lors du traitement du fichier : {e}")
