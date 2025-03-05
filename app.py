@@ -20,7 +20,7 @@ def calculate_rsi(prices, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# Fonction de backtesting corrigée
+# Fonction de backtesting corrigée (indentation fixée)
 def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=100000.0):
     data = data.sort_index(ascending=True)  # Tri chronologique strict
     data['Signal'] = 0
@@ -82,22 +82,60 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=
         data.at[data.index[i], 'Capital'] = capital + (actions_detenues * data['close'].iloc[i])
         data.at[data.index[i], 'Actions_Detenues'] = actions_detenues
 
-    return data
+    return data  # <-- Indentation correcte ici
 
-# Fonctions d'affichage (identique à précédemment)
+# Fonction pour afficher les résultats (indentation corrigée)
 def display_results(data, montant_investi):
-    # ... (identique à votre version précédente)
+    total_trades = data[data['Signal'] != 0].shape[0]
+    winning_trades = data[data['Trade_Result'] > 0].shape[0]
+    losing_trades = data[data['Trade_Result'] < 0].shape[0]
+    win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+    total_profit = data['Trade_Result'].sum()
+    resultat_final = data['Capital'].iloc[-1]
 
+    st.write(f"**Total des Trades :** {total_trades}")
+    st.write(f"**Trades Gagnants :** {winning_trades}")
+    st.write(f"**Trades Perdants :** {losing_trades}")
+    st.write(f"**Taux de Réussite :** {win_rate:.2f}%")
+    st.write(f"**Profit Total :** {total_profit:.2f}%")
+    st.write(f"**Montant Investi :** {montant_investi:.2f} CFA")
+    st.write(f"**Résultat Final :** {resultat_final:.2f} CFA")
+
+# Fonction pour afficher les graphiques (indentation corrigée)
 def plot_results(data):
-    # ... (identique à votre version précédente)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
+    fig.add_trace(go.Scatter(x=data.index, y=data['close'], name='Prix de Clôture'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Short'], name='Moyenne Mobile Courte'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Long'], name='Moyenne Mobile Longue'), row=1, col=1)
+    
+    buy_signals = data[data['Position'] == 'Buy']
+    sell_signals = data[data['Position'] == 'Sell']
+    fig.add_trace(go.Scatter(x=buy_signals.index, y=buy_signals['close'], mode='markers', name='Achat', marker=dict(color='green', size=10)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sell_signals.index, y=sell_signals['close'], mode='markers', name='Vente', marker=dict(color='red', size=10)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI'), row=2, col=1)
+    fig.update_layout(height=800, title_text="Résultats du Backtesting")
+    st.plotly_chart(fig)
 
+# Fonction pour afficher les trades (indentation corrigée)
 def display_trades_table(data):
-    # ... (identique à votre version précédente)
+    trades = data[data['Signal'] != 0][['Signal', 'Position', 'close', 'Trade_Result']]
+    trades['Type'] = trades['Position'].apply(lambda x: 'Achat' if x == 'Buy' else 'Vente')
+    trades['Résultat (%)'] = trades['Trade_Result']
+    trades['Prix'] = trades['close']
+    trades_table = trades[['Type', 'Prix', 'Résultat (%)']]
+    trades_table.index.name = 'Date'
+    
+    st.write("**Détails des Trades :**")
+    st.dataframe(trades_table.style.format({'Prix': '{:.2f}', 'Résultat (%)': '{:.2f}%'}))
 
+# Fonction pour l'évolution du capital (indentation corrigée)
 def plot_capital_evolution(data):
-    # ... (identique à votre version précédente)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data.index, y=data['Capital'], name='Capital', mode='lines'))
+    fig.update_layout(title="Évolution du Capital", xaxis_title="Date", yaxis_title="Capital (CFA)")
+    st.plotly_chart(fig)
 
-# Interface Streamlit 
+# Interface Streamlit
 st.title("Backtesting BRVM - Version Finale")
 st.sidebar.header("Configuration")
 
@@ -106,18 +144,15 @@ if uploaded_file:
     data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date')
     data = data.rename(columns=lambda x: x.strip().lower())
     
-    # Paramètres
     short_window = st.sidebar.slider("Moyenne Courte", 5, 50, 20)
     long_window = st.sidebar.slider("Moyenne Longue", 50, 200, 50)
     stop_loss = st.sidebar.number_input("Stop-Loss (%)", 1.0, 10.0, 2.0)
     take_profit = st.sidebar.number_input("Take-Profit (%)", 1.0, 20.0, 4.0)
     capital = st.sidebar.number_input("Capital Initial (CFA)", 10000, 1000000, 100000)
 
-    # Execution
     data = calculate_indicators(data, short_window, long_window)
     data = backtest_strategy(data, stop_loss, take_profit, capital)
     
-    # Affichage
     display_results(data, capital)
     plot_results(data)
     display_trades_table(data)
