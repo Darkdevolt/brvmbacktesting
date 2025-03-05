@@ -1,33 +1,50 @@
 import streamlit as st
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
-import investpy
 
-# Fonction pour récupérer les données historiques d'une action
-def get_historical_data(stock_name, country, from_date, to_date):
-    try:
-        data = investpy.get_stock_historical_data(stock=stock_name,
-                                                  country=country,
-                                                  from_date=from_date,
-                                                  to_date=to_date)
-        return data
-    except Exception as e:
-        st.error(f"Erreur lors de la récupération des données : {e}")
-        return None
+@st.cache_data(show_spinner=True)
+def get_historical_data(url):
+    """
+    Scrape la page et retourne un DataFrame des données historiques.
+    """
+    response = requests.get(url)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.content, "html.parser")
+        # Rechercher la table contenant les données. Adaptez ce sélecteur selon la structure du site.
+        table = soup.find("table")
+        if table is None:
+            st.error("Aucune table n'a été trouvée sur la page.")
+            return None
+        # Extraction des entêtes
+        headers = [th.text.strip() for th in table.find_all("th")]
+        # Extraction des lignes
+        rows = []
+        for tr in table.find_all("tr"):
+            cols = tr.find_all("td")
+            if cols:
+                row = [td.text.strip() for td in cols]
+                rows.append(row)
+        if headers and rows:
+            df = pd.DataFrame(rows, columns=headers)
+            return df
+    else:
+        st.error(f"Erreur lors de la récupération de la page (HTTP {response.status_code}).")
+    return None
 
-# Interface utilisateur Streamlit
-st.title("Données Historiques des Actions de la BRVM")
+# URL de la page contenant les données historiques (à adapter selon le site)
+url = "https://www.sikafinance.com/marches/download/BRVMC"
 
-# Sélection de l'action
-stock_name = st.text_input("Nom de l'action (ex: 'BOAS')", "BOAS")
+st.title("Données historiques de la BRVM Composite")
+st.write("Cette application récupère et affiche les données historiques de la BRVM via du web scraping.")
 
-# Dates de début et de fin
-from_date = st.date_input("Date de début", pd.to_datetime("2022-01-01"))
-to_date = st.date_input("Date de fin", pd.to_datetime("2023-01-01"))
+# Récupération des données
+data = get_historical_data(url)
 
-# Bouton pour récupérer les données
-if st.button("Récupérer les données"):
-    data = get_historical_data(stock_name, 'cote d\'ivoire', from_date.strftime('%d/%m/%Y'), to_date.strftime('%d/%m/%Y'))
-    if data is not None:
-        st.write(f"Données pour l'action {stock_name} de la BRVM")
-        st.dataframe(data)
-        st.line_chart(data['Close'])
+if data is not None:
+    st.subheader("Aperçu des données")
+    st.dataframe(data)
+else:
+    st.warning("Les données n'ont pas pu être récupérées.")
+
+st.write("Ce code est hébergé sur GitHub et déployé via Streamlit Cloud.")
