@@ -37,6 +37,10 @@ def nettoyer_fichier(uploaded_file):
         for col in ["Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"]:
             df[col] = df[col].apply(clean_numeric)
 
+        # Correction des prix (ex: 9.3 → 9300)
+        for col in ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]:
+            df[col] = df[col] * 1000
+
         # Convertir la colonne Date en format datetime
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors='coerce')
 
