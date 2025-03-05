@@ -28,10 +28,24 @@ risk_per_trade = st.sidebar.number_input("Risk par trade (%)", min_value=0.1, ma
 risk_reward = st.sidebar.number_input("Risk/Reward", min_value=1.0, max_value=5.0, value=2.0)
 
 # Upload des données historiques
-uploaded_file = st.file_uploader("Uploader votre fichier de données historiques", type=["csv"])
+uploaded_file = st.file_uploader("Uploader votre fichier de données historiques", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file)
+    if uploaded_file.name.endswith('.csv'):
+        data = pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith('.xlsx'):
+        data = pd.read_excel(uploaded_file)
+    
+    # Assurez-vous que les colonnes sont correctement nommées
+    data.rename(columns={
+        'Dernier': 'Close',
+        'Ouv.': 'Open',
+        'Plus Haut': 'High',
+        'Plus Bas': 'Low',
+        'Vol.': 'Volume',
+        'Variation %': 'Change'
+    }, inplace=True)
+    
     data['Date'] = pd.to_datetime(data['Date'])
     data.set_index('Date', inplace=True)
 
@@ -109,4 +123,4 @@ if uploaded_file is not None:
     st.plotly_chart(fig)
 
 else:
-    st.write("Veuillez uploader un fichier CSV contenant les données historiques.")
+    st.write("Veuillez uploader un fichier CSV ou Excel contenant les données historiques.")
