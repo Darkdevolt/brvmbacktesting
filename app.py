@@ -31,22 +31,37 @@ risk_reward = st.sidebar.number_input("Risk/Reward", min_value=1.0, max_value=5.
 uploaded_file = st.file_uploader("Uploader votre fichier de données historiques", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    if uploaded_file.name.endswith('.csv'):
-        data = pd.read_csv(uploaded_file)
-    elif uploaded_file.name.endswith('.xlsx'):
-        data = pd.read_excel(uploaded_file)
+    # Lecture des données
+    data = pd.read_excel(uploaded_file, sheet_name="in")
+
+    # Nettoyage des colonnes
+    data.columns = data.iloc[0].str.replace('"', '').str.strip()  # Supprimer les guillemets et espaces
+    data = data[1:].reset_index(drop=True)  # Supprimer la ligne des titres en double
     
-    # Assurez-vous que les colonnes sont correctement nommées
-    data.rename(columns={
-        'Dernier': 'Close',
+    # Renommer les colonnes pour standardiser
+    column_mapping = {
+        'Date': 'Date',
         'Ouv.': 'Open',
         'Plus Haut': 'High',
         'Plus Bas': 'Low',
+        'Dernier': 'Close',
         'Vol.': 'Volume',
         'Variation %': 'Change'
-    }, inplace=True)
-    
-    data['Date'] = pd.to_datetime(data['Date'])
+    }
+    data.rename(columns=column_mapping, inplace=True)
+
+    # Conversion des types de données
+    data['Date'] = pd.to_datetime(data['Date'], format='%d/%m/%Y')
+    for col in ['Open', 'High', 'Low', 'Close']:
+        data[col] = data[col].str.replace(' ', '').astype(float)
+
+    # Conversion des volumes (remplacement des "K" par "000")
+    data['Volume'] = data['Volume'].str.replace('K', '000').str.replace(' ', '').astype(float)
+
+    # Nettoyage et conversion des variations
+    data['Change'] = data['Change'].str.replace('%', '').str.replace(',', '.').astype(float) / 100
+
+    # Mettre la colonne Date en index
     data.set_index('Date', inplace=True)
 
     # Calcul des indicateurs techniques avec ta
@@ -57,10 +72,10 @@ if uploaded_file is not None:
     data['Middle Band'] = bb.bollinger_mavg()
     data['Lower Band'] = bb.bollinger_lband()
 
-    # Génération des signaux
+    # Génération des signaux d'achat et de vente
     data['Signal'] = 0
-    data['Signal'][(data['RSI'] < rsi_oversold) & (data['Close'] < data['Lower Band'])] = 1  # Achat
-    data['Signal'][(data['RSI'] > rsi_overbought) & (data['Close'] > data['Upper Band'])] = -1  # Vente
+    data.loc[(data['RSI'] < rsi_oversold) & (data['Close'] < data['Lower Band']), 'Signal'] = 1  # Achat
+    data.loc[(data['RSI'] > rsi_overbought) & (data['Close'] > data['Upper Band']), 'Signal'] = -1  # Vente
 
     # Calcul des transactions
     data['Position'] = data['Signal'].diff()
@@ -75,26 +90,25 @@ if uploaded_file is not None:
     risk_per_trade_amount = initial_capital * (risk_per_trade / 100)
     profit_loss = []
 
-    for i, row in transactions.iterrows():
+    for i in range(len(transactions) - 1):
+        row = transactions.iloc[i]
+        next_row = transactions.iloc[i + 1]  # Éviter les erreurs d'index
+
+        entry_price = row['Close']
         if row['Position'] == 1:  # Achat
-            entry_price = row['Close']
             stop_loss = entry_price * (1 - risk_per_trade / 100)
             take_profit = entry_price * (1 + (risk_per_trade / 100) * risk_reward)
+            if next_row['Close'] >= take_profit:
+                profit_loss.append(risk_per_trade_amount * risk_reward)
+            elif next_row['Close'] <= stop_loss:
+                profit_loss.append(-risk_per_trade_amount)
+
         elif row['Position'] == -1:  # Vente
-            entry_price = row['Close']
             stop_loss = entry_price * (1 + risk_per_trade / 100)
             take_profit = entry_price * (1 - (risk_per_trade / 100) * risk_reward)
-
-        # Simuler le résultat du trade
-        if row['Position'] == 1:
-            if data['Close'].shift(-1).iloc[0] >= take_profit:
+            if next_row['Close'] <= take_profit:
                 profit_loss.append(risk_per_trade_amount * risk_reward)
-            elif data['Close'].shift(-1).iloc[0] <= stop_loss:
-                profit_loss.append(-risk_per_trade_amount)
-        elif row['Position'] == -1:
-            if data['Close'].shift(-1).iloc[0] <= take_profit:
-                profit_loss.append(risk_per_trade_amount * risk_reward)
-            elif data['Close'].shift(-1).iloc[0] >= stop_loss:
+            elif next_row['Close'] >= stop_loss:
                 profit_loss.append(-risk_per_trade_amount)
 
     # Calcul de la rentabilité totale
@@ -104,10 +118,11 @@ if uploaded_file is not None:
     st.write(f"Rentabilité : {(final_capital - initial_capital) / initial_capital * 100:.2f}%")
 
     # Value at Risk (VaR)
-    var_95 = np.percentile(profit_loss, 5)
-    st.write(f"Value at Risk (95%) : {var_95:.2f}")
+    if len(profit_loss) > 0:
+        var_95 = np.percentile(profit_loss, 5)
+        st.write(f"Value at Risk (95%) : {var_95:.2f}")
 
-    # Conclusion
+    # Affichage des résultats
     if final_capital > initial_capital:
         st.success("La stratégie est rentable.")
     else:
