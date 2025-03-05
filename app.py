@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Fonction de nettoyage des données avec plus de vérifications
+# Fonction de nettoyage des données avec correction intelligente
 def nettoyer_fichier(uploaded_file):
     try:
         # Détection du format du fichier
@@ -12,35 +12,23 @@ def nettoyer_fichier(uploaded_file):
             xls = pd.ExcelFile(uploaded_file)
             df = pd.read_excel(xls, sheet_name=xls.sheet_names[0])
 
-        # Renommage des colonnes pour correspondre aux données attendues
+        # Renommage des colonnes
         df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
 
-        # Vérifier les types avant transformation
-        st.write("### Types des données AVANT correction :")
-        st.write(df.dtypes)
-
-        # Correction des séparateurs décimaux et conversion en float
+        # Conversion des nombres (gestion des virgules)
         cols_a_corriger = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
         for col in cols_a_corriger:
             df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
 
-            # Vérification : affichons les premières valeurs avant correction
-            st.write(f"🔎 Vérification des valeurs de `{col}` avant multiplication :")
-            st.write(df[col].head(10))
-
-        # Détection automatique du problème (ex : valeurs déjà en milliers ou non)
-        if df["Dernier"].max() < 100:  # Hypothèse : si toutes les valeurs sont < 100, alors elles doivent être multipliées
-            for col in cols_a_corriger:
-                df[col] *= 1000  # Multiplication par 1000
-
-        # Vérification après correction
-        st.write("### Types des données APRÈS correction :")
-        st.write(df.dtypes)
-
-        # Affichage des premières valeurs après correction
+        # Analyse des valeurs pour détecter les erreurs
         for col in cols_a_corriger:
-            st.write(f"🔎 Vérification des valeurs de `{col}` APRÈS multiplication :")
-            st.write(df[col].head(10))
+            min_val = df[col].min()
+            max_val = df[col].max()
+
+            # Si les valeurs sont incohérentes, on applique une correction sélective
+            if max_val > 100 and min_val < 100:
+                # On corrige uniquement les valeurs < 100
+                df[col] = df[col].apply(lambda x: x * 1000 if x < 100 else x)
 
         # Correction des dates
         df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
