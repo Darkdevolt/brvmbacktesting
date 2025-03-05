@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import talib
+import pandas_ta as ta
 import plotly.graph_objects as go
 
 # Titre de l'application
@@ -35,11 +35,13 @@ if uploaded_file is not None:
     data['Date'] = pd.to_datetime(data['Date'])
     data.set_index('Date', inplace=True)
 
-    # Calcul des indicateurs techniques
-    data['RSI'] = talib.RSI(data['Close'], timeperiod=rsi_period)
-    data['MA'] = talib.SMA(data['Close'], timeperiod=ma_period)
-    data['Upper Band'], data['Middle Band'], data['Lower Band'] = talib.BBANDS(
-        data['Close'], timeperiod=bb_period, nbdevup=bb_std, nbdevdn=bb_std, matype=0)
+    # Calcul des indicateurs techniques avec pandas_ta
+    data['RSI'] = ta.rsi(data['Close'], length=rsi_period)
+    data['MA'] = ta.sma(data['Close'], length=ma_period)
+    bb = ta.bbands(data['Close'], length=bb_period, std=bb_std)
+    data['Upper Band'] = bb['BBU_5_2.0']
+    data['Middle Band'] = bb['BBM_5_2.0']
+    data['Lower Band'] = bb['BBL_5_2.0']
 
     # Génération des signaux
     data['Signal'] = 0
