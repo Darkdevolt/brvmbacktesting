@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Fonction de nettoyage des données avec correction automatique
+# Fonction de nettoyage des données avec correction des séparateurs
 def nettoyer_fichier(uploaded_file):
     try:
         # Chargement du fichier CSV ou Excel
@@ -14,17 +14,10 @@ def nettoyer_fichier(uploaded_file):
         # Renommage des colonnes
         df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
 
-        # Conversion des nombres (gestion des virgules)
+        # Correction des nombres en supprimant le point
         cols_a_corriger = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
         for col in cols_a_corriger:
-            df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
-
-        # Détection des valeurs mal enregistrées
-        for col in cols_a_corriger:
-            max_val = df[col].max()
-            
-            if max_val < 100:  # Si toutes les valeurs sont inférieures à 100, elles sont sûrement en "petit format"
-                df[col] = df[col] * 1000  # Correction automatique
+            df[col] = df[col].astype(str).str.replace('.', '', regex=False).astype(int)  # Suppression du point et conversion en entier
 
         # Correction des dates
         df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
