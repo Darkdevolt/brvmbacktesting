@@ -18,9 +18,19 @@ if uploaded_file is not None:
     try:
         # Lecture du fichier selon son format
         if file_extension == ".csv":
-            data = pd.read_csv(uploaded_file, encoding="utf-8", delimiter=";", error_bad_lines=False)
+            try:
+                data = pd.read_csv(uploaded_file, encoding="utf-8", delimiter=";", error_bad_lines=False)
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la lecture du fichier CSV : {e}")
+                st.stop()
+        
         elif file_extension in [".xls", ".xlsx"]:
-            data = pd.read_excel(uploaded_file, engine="openpyxl")
+            try:
+                data = pd.read_excel(uploaded_file, engine="openpyxl")
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la lecture du fichier Excel : {e}")
+                st.stop()
+
         else:
             st.error("❌ Format de fichier non supporté. Veuillez uploader un fichier CSV ou Excel.")
             st.stop()
@@ -37,10 +47,14 @@ if uploaded_file is not None:
         date_columns = [col for col in data.columns if "date" in col.lower()]
         if date_columns:
             date_col = date_columns[0]
-            data[date_col] = pd.to_datetime(data[date_col], errors="coerce")
-            st.success(f"📅 Colonne date détectée : **{date_col}** et convertie en format datetime.")
+            try:
+                data[date_col] = pd.to_datetime(data[date_col], errors="coerce")
+                st.success(f"📅 Colonne date détectée : **{date_col}** et convertie en format datetime.")
+            except Exception as e:
+                st.error(f"❌ Erreur de conversion de la colonne Date : {e}")
+                st.stop()
         else:
-            st.error("❌ Aucune colonne Date trouvée. Assurez-vous que votre fichier contient une colonne avec 'Date' dans son nom.")
+            st.error("❌ Aucune colonne Date trouvée. Vérifiez votre fichier.")
             st.stop()
 
         # Vérification et correction des types de colonnes
@@ -51,7 +65,7 @@ if uploaded_file is not None:
                 except:
                     pass
 
-        # Graphique simple de l'évolution des prix de clôture
+        # Détection de la colonne "Clôture" ou "Close" pour le graphique
         possible_price_cols = [col for col in data.columns if "clôture" in col.lower() or "close" in col.lower()]
         if possible_price_cols:
             price_col = possible_price_cols[0]
@@ -61,7 +75,7 @@ if uploaded_file is not None:
             st.error("❌ Impossible de détecter une colonne de prix de clôture. Vérifiez votre fichier.")
 
     except Exception as e:
-        st.error(f"❌ Erreur lors du traitement du fichier : {e}")
+        st.error(f"❌ Erreur inattendue : {e}")
 
 else:
     st.info("📤 Charge un fichier CSV ou Excel pour commencer l'analyse.")
