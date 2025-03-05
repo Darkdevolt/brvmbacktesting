@@ -1,59 +1,25 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
-def process_data(uploaded_file):
-    # Lire le CSV avec gestion des guillemets et séparateurs
-    df = pd.read_csv(uploaded_file, dtype=str, quotechar='"', thousands='.', decimal=',')
-
-    # Traitement spécifique pour chaque colonne
-    numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
+def clean_data(df):
+    # Traitement des colonnes numériques (suppression du séparateur de milliers)
+    for col in ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]:
+        # Suppression du point pour convertir "9.300" en 9300
+        df[col] = df[col].str.replace('.', '', regex=False).astype(int)
     
-    # Conversion des nombres avec séparateur de milliers
-    for col in numeric_cols:
-        df[col] = df[col].str.replace('.', '', regex=False).astype(float)
-    
-    # Traitement de la colonne Vol.
-    if 'Vol.' in df.columns:
-        df['Vol.'] = (
-            df['Vol.']
-            .str.replace('K', '', regex=False)
-            .str.replace(',', '.')
-            .astype(float)
-            * 1000
-        )
-    
-    # Traitement de la colonne Variation %
-    if 'Variation %' in df.columns:
-        df['Variation %'] = (
-            df['Variation %']
-            .str.replace('%', '', regex=False)
-            .str.replace(',', '.')
-            .astype(float)
-        )
-    
+    # Traitement de la colonne "Vol."
+    df["Vol."] = df["Vol."].str.replace(',', '.', regex=False)  # Convertir la virgule en point
+    df["Vol."] = df["Vol."].apply(lambda x: float(x.replace('K', '')) * 1000 if 'K' in x else float(x)).astype(int)
     return df
 
-def main():
-    st.title("📊 Traitement de Données Financières")
-    
-    uploaded_file = st.file_uploader("Déposez votre fichier CSV", type=["csv"])
-    
-    if uploaded_file:
-        df = process_data(uploaded_file)
-        
-        st.success("Traitement réussi !")
-        st.dataframe(df.style.format({
-            'Vol.': '{:,.0f}',
-            'Variation %': '{:.2f}%'
-        }))
-        
-        csv = df.to_csv(index=False, sep=';', decimal=',')
-        st.download_button(
-            label="📥 Télécharger les données traitées",
-            data=csv,
-            file_name="donnees_traitees.csv",
-            mime="text/csv"
-        )
+st.title("Traitement de fichier CSV")
 
-if __name__ == "__main__":
-    main()
+uploaded_file = st.file_uploader("Choisir un fichier CSV", type="csv")
+if uploaded_file is not None:
+    # Lecture du fichier
+    df = pd.read_csv(uploaded_file, quotechar='"')
+    st.write("Données brutes", df.head())
+    
+    # Nettoyage des données
+    df_clean = clean_data(df)
+    st.write("Données nettoyées", df_clean.head())
