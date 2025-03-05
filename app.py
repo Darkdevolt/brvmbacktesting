@@ -1,59 +1,36 @@
-import streamlit as st
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
-import io
 
-# Fonction de correction des prix
-def corriger_prix(val):
-    try:
-        val = str(val).replace(".", "")  # Supprime le point
-        return int(val)  # Convertit en entier
-    except:
-        return val  # Si erreur, on garde la valeur originale
+# URL de la page à scraper
+url = 'https://fr.investing.com/indices/brvm-composite-historical-data'
 
-# Fonction de nettoyage des données
-def nettoyer_fichier(uploaded_file):
-    try:
-        # Chargement du fichier CSV
-        df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
+# En-têtes pour la requête HTTP
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
 
-        # Renommage des colonnes (ajuster selon le fichier réel)
-        df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
+# Effectuer la requête GET
+response = requests.get(url, headers=headers)
+response.raise_for_status()  # Vérifier que la requête a réussi
 
-        # Correction des prix sur les bonnes colonnes
-        colonnes_prix = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
-        for col in colonnes_prix:
-            df[col] = df[col].apply(corriger_prix)
+# Parser le contenu HTML
+soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Correction des dates
-        df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
+# Trouver le tableau contenant les données historiques
+table = soup.find('table', {'id': 'curr_table'})
 
-        return df
-    except Exception as e:
-        st.error(f"Erreur : {e}")
-        return None
+# Extraire les en-têtes du tableau
+headers = [header.text.strip() for header in table.find_all('th')]
 
-# Interface Streamlit
-st.title("Nettoyage des Données de Bourse")
+# Extraire les lignes du tableau
+rows = []
+for row in table.find_all('tr')[1:]:
+    cols = [col.text.strip() for col in row.find_all('td')]
+    if cols:
+        rows.append(cols)
 
-uploaded_file = st.file_uploader("Uploader un fichier CSV", type=["csv"])
+# Créer un DataFrame pandas
+df = pd.DataFrame(rows, columns=headers)
 
-if uploaded_file is not None:
-    df_propre = nettoyer_fichier(uploaded_file)
-
-    if df_propre is not None:
-        st.success("Fichier traité avec succès !")
-        st.write("### Données Nettoyées :")
-        st.dataframe(df_propre)
-
-        # Télécharger le fichier nettoyé
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_propre.to_excel(writer, index=False, sheet_name="Données Nettoyées")
-        processed_data = output.getvalue()
-
-        st.download_button(
-            label="Télécharger le fichier nettoyé",
-            data=processed_data,
-            file_name="data_propre.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+# Afficher le DataFrame
+print(df)
