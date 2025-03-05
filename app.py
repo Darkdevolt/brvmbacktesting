@@ -5,54 +5,32 @@ import io
 # Fonction de nettoyage des données
 def nettoyer_fichier(uploaded_file):
     try:
-        # Détecter si c'est un CSV ou un Excel
+        # Charger les données (CSV ou Excel)
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file, delimiter=",", encoding="utf-8")
         else:
             xls = pd.ExcelFile(uploaded_file)
             df = pd.read_excel(xls, sheet_name=xls.sheet_names[0])
 
-        # Vérifier si les données sont mal stockées en une seule colonne
-        if df.shape[1] == 1:
-            df = df.iloc[:, 0].str.split(',', expand=True)
+        # Renommer les colonnes si nécessaire
+        df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"][:df.shape[1]]
 
-        # Renommer les colonnes correctement
-        df.columns = ["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"] + \
-                     [f"Colonne_{i}" for i in range(7, df.shape[1])]
+        # Correction des valeurs numériques
+        cols_a_corriger = ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]
+        for col in cols_a_corriger:
+            df[col] = pd.to_numeric(df[col], errors='coerce') * 1000  # Multiplication par 1000
 
-        # Garder uniquement les colonnes nécessaires
-        df = df[["Date", "Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"]]
-
-        # Nettoyer les valeurs numériques
-        def clean_numeric(value):
-            if isinstance(value, str):
-                value = value.replace('"', '').replace(' ', '').replace('K', '000').replace('%', '')
-                try:
-                    return float(value) / 100 if '%' in value else float(value)
-                except ValueError:
-                    return None  # Retourne None si la valeur est incorrecte
-            return value
-
-        for col in ["Dernier", "Ouverture", "Plus Haut", "Plus Bas", "Volume", "Variation %"]:
-            df[col] = df[col].apply(clean_numeric)
-
-        # Correction des prix (ex: 9.3 → 9300)
-        for col in ["Dernier", "Ouverture", "Plus Haut", "Plus Bas"]:
-            df[col] = pd.to_numeric(df[col], errors='coerce')  # Convertir en float
-            df[col] = df[col] * 1000  # Multiplier par 1000
-
-        # Convertir la colonne Date en format datetime
-        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors='coerce')
+        # Convertir la date
+        df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
 
         return df
     except Exception as e:
-        st.error(f"Erreur lors du nettoyage du fichier : {e}")
+        st.error(f"Erreur : {e}")
         return None
 
 # Interface Streamlit
-st.title("Nettoyage et Visualisation des Données CSV/Excel")
+st.title("Nettoyage des Données de Bourse")
 
-# Upload du fichier
 uploaded_file = st.file_uploader("Uploader un fichier CSV ou Excel", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
