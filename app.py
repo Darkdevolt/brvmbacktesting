@@ -30,12 +30,13 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=
     capital = montant_investi  # Capital courant
     actions_detenues = 0  # Nombre d'actions détenues
     prix_moyen_achat = 0.0  # Prix moyen d'achat des actions détenues
+    premier_achat_effectue = False  # Pour s'assurer que le premier ordre est un achat
 
     for i in range(1, len(data)):
         # Condition d'achat : Croisement de moyennes mobiles
         if data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]:
-            if actions_detenues == 0:
-                # Premier achat
+            if not premier_achat_effectue:
+                # Premier achat (obligatoire)
                 data.at[data.index[i], 'Signal'] = 1
                 prix_achat = data['close'].iloc[i]
                 actions_detenues = capital // prix_achat  # Acheter autant d'actions que possible
@@ -43,7 +44,8 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=
                 prix_moyen_achat = prix_achat  # Initialiser le prix moyen d'achat
                 data.at[data.index[i], 'Position'] = 'Buy'
                 data.at[data.index[i], 'Actions_Detenues'] = actions_detenues
-            else:
+                premier_achat_effectue = True  # Marquer que le premier achat est effectué
+            elif actions_detenues > 0:
                 # Renforcer l'achat (acheter davantage)
                 data.at[data.index[i], 'Signal'] = 1
                 prix_achat = data['close'].iloc[i]
