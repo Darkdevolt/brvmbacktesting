@@ -1,38 +1,39 @@
 import streamlit as st
-import pandas as pd
+import csv
+import io
 
 def process_data(file):
-    # Lecture du fichier CSV en tant que texte pour éviter la suppression des zéros
-    df = pd.read_csv(file, sep=',', quotechar='"', dtype=str)
+    # Lire le fichier CSV sans transformation automatique
+    file_content = file.getvalue().decode("utf-8")
+    reader = csv.reader(io.StringIO(file_content), delimiter=',', quotechar='"')
 
-    # Nettoyage des noms de colonnes
-    df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
-    
-    # Vérification des colonnes
-    st.write("Colonnes du fichier :", df.columns.tolist())
+    # Convertir le CSV en liste de listes
+    data = list(reader)
 
-    # Colonnes contenant des nombres avec un séparateur de milliers '.'
+    # Nettoyage des en-têtes
+    headers = [col.strip().replace('\ufeff', '') for col in data[0]]
+    rows = data[1:]  # Toutes les lignes sauf l'en-tête
+
+    # Remplacement du séparateur dans les colonnes concernées
     numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
+    vol_col = "Vol."
 
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = df[col].str.replace('.', ',', regex=False)  # Remplacer le point par une virgule
+    # Trouver les indices des colonnes concernées
+    col_indices = {col: headers.index(col) for col in numeric_cols if col in headers}
+    vol_index = headers.index(vol_col) if vol_col in headers else None
 
-    # Traitement de la colonne "Vol."
-    if "Vol." in df.columns:
-        df["Vol."] = df["Vol."].str.replace(',', '.', regex=False)  # Remplacer ',' par '.'
-        
-        def convert_vol(val):
-            try:
-                if 'K' in val:
-                    return str(int(float(val.replace('K', '')) * 1000))  # Convertir en entier et en str
-                return str(int(float(val)))  # Convertir en entier et en str pour garder les zéros
-            except:
-                return val  # Retourner la valeur d'origine en cas d'erreur
+    # Traiter chaque ligne
+    for row in rows:
+        # Remplacement des points par des virgules dans les colonnes numériques
+        for col, idx in col_indices.items():
+            row[idx] = row[idx].replace('.', ',')  # Remplacer . par ,
 
-        df["Vol."] = df["Vol."].apply(convert_vol)
+        # Convertir les volumes en supprimant 'K' et en multipliant par 1000
+        if vol_index is not None:
+            if 'K' in row[vol_index]:
+                row[vol_index] = str(int(float(row[vol_index].replace('K', '').replace(',', '.')) * 1000))
 
-    return df
+    return [headers] + rows  # Retourner les données avec l'en-tête
 
 def main():
     st.title("Traitement de CSV - Application BRVM")
@@ -40,8 +41,12 @@ def main():
     
     if uploaded_file is not None:
         try:
-            df_processed = process_data(uploaded_file)
-            st.write("Données traitées :", df_processed)
+            processed_data = process_data(uploaded_file)
+            
+            # Afficher le tableau formaté
+            st.write("Données traitées :")
+            st.dataframe(processed_data)
+            
         except Exception as e:
             st.error(f"Erreur lors du traitement du fichier : {e}")
 
