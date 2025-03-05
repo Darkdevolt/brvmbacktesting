@@ -21,7 +21,7 @@ def calculate_rsi(prices, window=14):
     return rsi
 
 # Fonction pour simuler la stratégie (sans short selling)
-def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi):
+def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=100000.0):
     data['Signal'] = 0  # 1 pour acheter, -1 pour vendre, 0 pour rien faire
     data['Trade_Result'] = 0.0  # Résultat de chaque trade
     data['Position'] = None  # Position actuelle (None, 'Buy', 'Sell')
