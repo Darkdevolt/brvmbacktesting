@@ -155,7 +155,6 @@ def display_results(data, montant_investi):
 def plot_results(data, show_rsi=True, show_bollinger=True):
     rows = 1
     if show_rsi: rows += 1
-    if show_bollinger: rows += 0  # Les bandes Bollinger sont sur le graph principal
     
     fig = make_subplots(
         rows=rows, 
