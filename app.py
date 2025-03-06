@@ -48,12 +48,12 @@ def main():
     
     st.title("🧹 Nettoyeur de Données BRVM")
     st.markdown("""
-    **Fonctionnalités principales :**
-    - Conversion automatique des formats numériques français
-    - Transformation des volumes (K/M en valeurs numériques)
+    **Fonctionnalités exclusives :**
+    - Conversion des formats numériques français → international
+    - Transformation automatique des volumes (K/M → chiffres)
     """)
 
-    uploaded_file = st.file_uploader("Importer votre fichier CSV", type=["csv"])
+    uploaded_file = st.file_uploader("Importer votre fichier CSV BRVM", type=["csv"])
     
     if uploaded_file is not None:
         try:
@@ -67,13 +67,12 @@ def main():
                 mime="text/csv"
             )
 
-            # Aperçu simplifié
-            st.subheader("Aperçu des données")
-            preview_lines = new_csv_content.split('\n')[:4]
-            st.code("\n".join(preview_lines))
+            # Aperçu basique
+            st.subheader("Aperçu du résultat")
+            st.code("\n".join(new_csv_content.split('\n')[:5]))
 
         except Exception as e:
-            st.error(f"❌ Erreur de traitement : {str(e)}")
+            st.error(f"❌ Erreur détectée : {str(e)}")
 
 if __name__ == '__main__':
     main()
