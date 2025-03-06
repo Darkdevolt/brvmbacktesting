@@ -35,9 +35,9 @@ def process_and_save_file(file):
             vol_str = new_row[vol_index].strip().upper()
             vol_str = vol_str.replace(' ', '').replace(',', '.')
             if 'K' in vol_str:
-                new_row[vol_index] = str(int(float(vol_str.replace('K', '')) * 1000))
+                new_row[vol_index] = str(int(float(vol_str.replace('K', '')) * 1000)
             elif 'M' in vol_str:
-                new_row[vol_index] = str(int(float(vol_str.replace('M', '')) * 1000000))
+                new_row[vol_index] = str(int(float(vol_str.replace('M', '')) * 1000000)
 
         writer.writerow(new_row)
 
@@ -51,7 +51,6 @@ def main():
     **Fonctionnalités principales :**
     - Conversion automatique des formats numériques français
     - Transformation des volumes (K/M en valeurs numériques)
-    - Suppression de la gestion des dates
     """)
 
     uploaded_file = st.file_uploader("Importer votre fichier CSV", type=["csv"])
