@@ -1,87 +1,99 @@
 import streamlit as st
-import csv
+import pandas as pd
+import numpy as np
 import io
 from datetime import datetime
 
-def process_and_save_file(file):
-    file_content = file.getvalue().decode("utf-8")
-    reader = csv.reader(io.StringIO(file_content), delimiter=',', quotechar='"')
+# Fonction pour calculer les indicateurs techniques
+def calculate_technical_indicators(df):
+    # Moyenne mobile sur 20 jours
+    df['MA_20'] = df['Dernier'].rolling(window=20).mean()
+    
+    # Moyenne mobile sur 50 jours
+    df['MA_50'] = df['Dernier'].rolling(window=50).mean()
+    
+    # Rendement quotidien
+    df['Rendement_Quotidien'] = df['Dernier'].pct_change()
+    
+    # Rendement annuel
+    df['Année'] = df['Date'].dt.year
+    annual_returns = df.groupby('Année')['Rendement_Quotidien'].apply(lambda x: (1 + x).prod() - 1)
+    
+    return df, annual_returns
 
-    data = list(reader)
-    headers = [col.strip().replace('\ufeff', '') for col in data[0]]
-    rows = data[1:]
-
+# Fonction pour traiter le fichier CSV
+def process_and_analyze_file(file):
+    # Lecture du fichier CSV
+    df = pd.read_csv(file, delimiter=',', parse_dates=['Date'], dayfirst=True)
+    
+    # Conversion des nombres (formats français)
     numeric_cols = ["Dernier", "Ouv.", "Plus Haut", "Plus Bas"]
-    vol_col = "Vol."
-    date_col = "Date"
+    for col in numeric_cols:
+        df[col] = df[col].str.replace('.', '').str.replace(',', '.').astype(float)
+    
+    # Conversion des volumes (K et M)
+    if 'Vol.' in df.columns:
+        df['Vol.'] = df['Vol.'].replace({'K': '*1e3', 'M': '*1e6'}, regex=True).map(pd.eval).astype(int)
+    
+    # Calcul des indicateurs techniques
+    df, annual_returns = calculate_technical_indicators(df)
+    
+    return df, annual_returns
 
-    col_indices = {col: headers.index(col) for col in numeric_cols if col in headers}
-    vol_index = headers.index(vol_col) if vol_col in headers else None
-    date_index = headers.index(date_col) if date_col in headers else None
-
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-
-    writer.writerow(headers)
-    for row in rows:
-        new_row = row.copy()
-
-        # Conversion des nombres
-        for col, idx in col_indices.items():
-            new_row[idx] = new_row[idx].replace('.', ',')
-
-        # Conversion des volumes
-        if vol_index is not None and 'K' in new_row[vol_index]:
-            vol_value = new_row[vol_index].replace('K', '').replace(',', '.')
-            new_row[vol_index] = str(int(float(vol_value) * 1000))
-
-        # Conversion des dates (conservée mais sans sélection dans l'interface)
-        if date_index is not None:
-            try:
-                original_date = datetime.strptime(new_row[date_index], "%d/%m/%Y")
-                new_row[date_index] = original_date.strftime("%Y-%m-%d")
-            except ValueError:
-                pass
-
-        writer.writerow(new_row)
-
-    return output.getvalue()
-
+# Interface Streamlit
 def main():
     st.set_page_config(page_title="BRVM Backtester", layout="wide")
     
     st.title("🚀 Backtesting Automatique BRVM")
     st.markdown("""
-    *Hébergé sur [GitHub](https://github.com/votrecompte/votrerepo) | Déployé avec [Streamlit Cloud](https://streamlit.io/cloud)*
+    **Visualisez les performances de vos stratégies sur les données BRVM.**
+    - Moyennes mobiles (20 et 50 jours)
+    - Rendements annuels
+    - Analyse technique simplifiée
     """)
 
+    # Upload du fichier CSV
     uploaded_file = st.file_uploader("Importer votre fichier CSV Historique", type=["csv"])
     
     if uploaded_file is not None:
         try:
-            new_csv_content = process_and_save_file(uploaded_file)
+            # Traitement et analyse du fichier
+            df, annual_returns = process_and_analyze_file(uploaded_file)
             
-            st.success("✅ Fichier corrigé avec succès !")
+            # Affichage des résultats
+            st.success("✅ Fichier analysé avec succès !")
+            
+            # Section 1 : Graphique des prix et moyennes mobiles
+            st.subheader("Graphique des prix et moyennes mobiles")
+            st.line_chart(df.set_index('Date')[['Dernier', 'MA_20', 'MA_50']])
+            
+            # Section 2 : Rendements annuels
+            st.subheader("Rendements annuels")
+            st.bar_chart(annual_returns)
+            
+            # Section 3 : Tableau de bord des indicateurs
+            st.subheader("Indicateurs clés")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Rendement total", f"{df['Rendement_Quotidien'].sum() * 100:.2f}%")
+            with col2:
+                st.metric("Volatilité annuelle", f"{df['Rendement_Quotidien'].std() * np.sqrt(252) * 100:.2f}%")
+            with col3:
+                st.metric("Ratio de Sharpe", f"{(df['Rendement_Quotidien'].mean() / df['Rendement_Quotidien'].std()) * np.sqrt(252):.2f}")
+            
+            # Section 4 : Téléchargement des résultats
+            st.subheader("Télécharger les résultats")
+            output = io.StringIO()
+            df.to_csv(output, index=False)
             st.download_button(
-                label="📥 Télécharger le CSV corrigé",
-                data=new_csv_content,
-                file_name="BRVM_Backtest_Ready.csv",
+                label="📥 Télécharger les données analysées",
+                data=output.getvalue(),
+                file_name="BRVM_Analyse.csv",
                 mime="text/csv"
             )
 
-            # Section backtesting (sans sélection de date)
-            st.subheader("Backtesting")
-            if st.button("Lancer le Backtest"):
-                # Votre logique de backtesting ici
-                st.write("🔍 Backtesting en cours...")
-                # Exemple de résultat (à adapter avec votre logique)
-                st.write("📊 Résultats du backtesting :")
-                st.write("- Rendement total : 15.3%")
-                st.write("- Sharpe ratio : 1.2")
-                st.write("- Drawdown maximal : -8.5%")
-
         except Exception as e:
-            st.error(f"❌ Erreur critique : {str(e)}")
+            st.error(f"❌ Erreur lors de l'analyse : {str(e)}")
 
 if __name__ == '__main__':
     main()
