@@ -138,6 +138,14 @@ def display_yearly_summary(data):
 
 # 5. Affichage des résultats
 def display_results(data, montant_investi):
+    if data.empty:
+        st.error("Aucune donnée disponible pour la période sélectionnée. Veuillez ajuster les dates ou vérifier le fichier importé.")
+        return
+
+    if 'Capital' not in data.columns or data['Capital'].empty:
+        st.error("La colonne 'Capital' est manquante ou vide.")
+        return
+
     total_trades = data[data['Signal'] != 0].shape[0]
     winning_trades = data[data['Trade_Result'] > 0].shape[0]
     losing_trades = data[data['Trade_Result'] < 0].shape[0]
@@ -306,22 +314,25 @@ if uploaded_file:
     # Filtrage des données selon la période sélectionnée
     data = data.loc[start_date:end_date]
     
-    data = calculate_indicators(
-        data,
-        short_window=short_window,
-        long_window=long_window,
-        show_rsi=show_rsi,
-        show_bollinger=show_bollinger,
-        bollinger_window=bollinger_window if show_bollinger else 20,
-        bollinger_std=bollinger_std if show_bollinger else 2
-    )
-    
-    data = backtest_strategy(data, stop_loss, take_profit, capital)
-    
-    display_results(data, capital)
-    plot_results(data, show_rsi, show_bollinger)
-    plot_capital_evolution(data)
-    display_transactions_table(data)
+    if data.empty:
+        st.error("Aucune donnée disponible pour la période sélectionnée. Veuillez ajuster les dates ou vérifier le fichier importé.")
+    else:
+        data = calculate_indicators(
+            data,
+            short_window=short_window,
+            long_window=long_window,
+            show_rsi=show_rsi,
+            show_bollinger=show_bollinger,
+            bollinger_window=bollinger_window if show_bollinger else 20,
+            bollinger_std=bollinger_std if show_bollinger else 2
+        )
+        
+        data = backtest_strategy(data, stop_loss, take_profit, capital)
+        
+        display_results(data, capital)
+        plot_results(data, show_rsi, show_bollinger)
+        plot_capital_evolution(data)
+        display_transactions_table(data)
 
 else:
     st.info("ℹ️ Veuillez uploader un fichier CSV pour démarrer l'analyse.")
