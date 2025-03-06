@@ -4,11 +4,25 @@ import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-# 1. Calcul des indicateurs techniques
-def calculate_indicators(data, short_window=20, long_window=50):
+# 1. Calcul des indicateurs techniques avec options
+def calculate_indicators(data, short_window=20, long_window=50, 
+                        show_rsi=True, show_bollinger=True, 
+                        bollinger_window=20, bollinger_std=2):
+    # Moyennes mobiles
     data['MA_Short'] = data['close'].rolling(window=short_window, min_periods=1).mean()
     data['MA_Long'] = data['close'].rolling(window=long_window, min_periods=1).mean()
-    data['RSI'] = calculate_rsi(data['close'], window=14)
+    
+    # RSI
+    if show_rsi:
+        data['RSI'] = calculate_rsi(data['close'])
+    
+    # Bandes de Bollinger
+    if show_bollinger:
+        data['Bollinger_Mid'] = data['close'].rolling(window=bollinger_window).mean()
+        data['Bollinger_Std'] = data['close'].rolling(window=bollinger_window).std()
+        data['Bollinger_Upper'] = data['Bollinger_Mid'] + (data['Bollinger_Std'] * bollinger_std)
+        data['Bollinger_Lower'] = data['Bollinger_Mid'] - (data['Bollinger_Std'] * bollinger_std)
+    
     return data
 
 # 2. Calcul du RSI
@@ -138,13 +152,43 @@ def display_results(data, montant_investi):
     display_yearly_summary(data)
 
 # 6. Visualisations
-def plot_results(data):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
+def plot_results(data, show_rsi=True, show_bollinger=True):
+    rows = 1
+    if show_rsi: rows += 1
+    if show_bollinger: rows += 0  # Les bandes Bollinger sont sur le graph principal
     
+    fig = make_subplots(
+        rows=rows, 
+        cols=1, 
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+        specs=[[{"type": "scatter"}]] + [[{"type": "scatter"}]] if show_rsi else []
+    )
+    
+    # Graphique principal
     fig.add_trace(go.Scatter(x=data.index, y=data['close'], name='Prix'), row=1, col=1)
     fig.add_trace(go.Scatter(x=data.index, y=data['MA_Short'], name='MM Courte'), row=1, col=1)
     fig.add_trace(go.Scatter(x=data.index, y=data['MA_Long'], name='MM Longue'), row=1, col=1)
     
+    # Bandes de Bollinger
+    if show_bollinger and 'Bollinger_Upper' in data:
+        fig.add_trace(go.Scatter(
+            x=data.index, 
+            y=data['Bollinger_Upper'], 
+            name='Bollinger Upper',
+            line=dict(color='rgba(200,200,200,0.5)'
+        ), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(
+            x=data.index, 
+            y=data['Bollinger_Lower'], 
+            name='Bollinger Lower',
+            line=dict(color='rgba(200,200,200,0.5)'),
+            fill='tonexty',
+            fillcolor='rgba(200,200,200,0.2)'
+        ), row=1, col=1)
+    
+    # Signaux de trading
     buys = data[data['Position'] == 'Buy']
     sells = data[data['Position'] == 'Sell']
     fig.add_trace(go.Scatter(x=buys.index, y=buys['close'], mode='markers', 
@@ -152,9 +196,13 @@ def plot_results(data):
     fig.add_trace(go.Scatter(x=sells.index, y=sells['close'], mode='markers', 
                            marker=dict(color='red', size=10), name='Vente'), row=1, col=1)
     
-    fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI'), row=2, col=1)
+    # RSI
+    if show_rsi and 'RSI' in data:
+        fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI'), row=2, col=1)
+        fig.add_hline(y=30, line=dict(color='red', dash='dash'), row=2, col=1)
+        fig.add_hline(y=70, line=dict(color='green', dash='dash'), row=2, col=1)
     
-    fig.update_layout(height=800, title_text="Analyse Complète")
+    fig.update_layout(height=800, title_text="Analyse Technique", showlegend=True)
     st.plotly_chart(fig)
 
 def plot_capital_evolution(data):
@@ -174,10 +222,9 @@ def plot_capital_evolution(data):
     )
     st.plotly_chart(fig)
 
-# 7. Tableau des transactions chronologique
+# 7. Journal des transactions
 def display_transactions_table(data):
-    transactions = data[data['Signal'] != 0].copy()
-    transactions = transactions.sort_index(ascending=True)  # Tri chronologique
+    transactions = data[data['Signal'] != 0].copy().sort_index(ascending=True)
     
     transactions['Type'] = transactions['Position'].apply(lambda x: 'Achat' if x == 'Buy' else 'Vente')
     transactions['Quantité'] = transactions['Actions_Detenues'].diff().abs().fillna(transactions['Actions_Detenues'])
@@ -190,7 +237,7 @@ def display_transactions_table(data):
         'Trade_Result': 'Résultat (%)'
     })
     
-    st.write("**Journal des Transactions Chronologique**")
+    st.write("**Journal Complet des Transactions**")
     st.dataframe(
         formatted_table.style.format({
             'Prix': '{:.2f} CFA',
@@ -200,44 +247,70 @@ def display_transactions_table(data):
         }),
         height=600,
         column_config={
-            "Type": st.column_config.TextColumn("Type", width="small"),
-            "Prix": st.column_config.NumberColumn("Prix (CFA)", format="%.2f CFA"),
-            "Quantité": st.column_config.NumberColumn("Quantité", format="%d"),
             "Résultat (%)": st.column_config.ProgressColumn(
-                "Résultat (%)",
+                "Performance",
                 format="%.2f%%",
                 min_value=-100,
-                max_value=100
+                max_value=100,
+                width="medium"
             )
         }
     )
 
 # 8. Interface Streamlit
-st.title("📈 Backtesting BRVM Pro - Version Finale")
-st.sidebar.header("⚙️ Configuration")
+st.title("📈 Backtesting BRVM - Édition Professionnelle")
+st.sidebar.header("⚙️ Configuration Générale")
 
-uploaded_file = st.sidebar.file_uploader("📤 Importer données historiques (CSV)", type=["csv"])
+# Upload des données
+uploaded_file = st.sidebar.file_uploader("📤 Importer CSV Historique", type=["csv"])
+
+# Paramètres des indicateurs
+with st.sidebar.expander("📊 Options des Indicateurs"):
+    col1, col2 = st.columns(2)
+    with col1:
+        show_rsi = st.checkbox("Afficher RSI", value=True)
+        show_bollinger = st.checkbox("Afficher Bollinger", value=True)
+    with col2:
+        if show_bollinger:
+            bollinger_window = st.slider("Fenêtre Bollinger", 10, 50, 20)
+            bollinger_std = st.slider("Écart-type", 1.0, 3.0, 2.0)
+
+# Paramètres de stratégie
+with st.sidebar.expander("🎯 Paramètres de Stratégie"):
+    col1, col2 = st.columns(2)
+    with col1:
+        short_window = st.slider("MM Courte", 5, 50, 20)
+        stop_loss = st.number_input("Stop-Loss (%)", 1.0, 20.0, 2.0)
+    with col2:
+        long_window = st.slider("MM Longue", 50, 200, 50)
+        take_profit = st.number_input("Take-Profit (%)", 1.0, 30.0, 4.0)
+    
+    capital = st.number_input("Capital Initial (CFA)", 10000, 10000000, 100000)
+
+# Traitement principal
 if uploaded_file:
     data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date')
     data = data.rename(columns=lambda x: x.strip().lower())
     
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        short_window = st.slider("📏 Moyenne Courte", 5, 50, 20)
-        stop_loss = st.number_input("⛔ Stop-Loss (%)", 1.0, 20.0, 2.0)
-    with col2:
-        long_window = st.slider("📐 Moyenne Longue", 50, 200, 50)
-        take_profit = st.number_input("🎯 Take-Profit (%)", 1.0, 30.0, 4.0)
+    data = calculate_indicators(
+        data,
+        short_window=short_window,
+        long_window=long_window,
+        show_rsi=show_rsi,
+        show_bollinger=show_bollinger,
+        bollinger_window=bollinger_window if show_bollinger else 20,
+        bollinger_std=bollinger_std if show_bollinger else 2
+    )
     
-    capital = st.sidebar.number_input("💰 Capital Initial (CFA)", 10000, 10000000, 100000)
-
-    data = calculate_indicators(data, short_window, long_window)
     data = backtest_strategy(data, stop_loss, take_profit, capital)
     
     display_results(data, capital)
-    plot_results(data)
+    plot_results(data, show_rsi, show_bollinger)
     plot_capital_evolution(data)
-    display_transactions_table(data)  # Tableau ajouté ici
+    display_transactions_table(data)
 
 else:
-    st.info("ℹ️ Veuillez uploader un fichier CSV pour commencer.")
+    st.info("ℹ️ Veuillez uploader un fichier CSV pour démarrer l'analyse.")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("Développé par [Votre Nom] • Version 1.2.0")
