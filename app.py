@@ -141,12 +141,10 @@ def display_results(data, montant_investi):
 def plot_results(data):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
     
-    # Prix et indicateurs
     fig.add_trace(go.Scatter(x=data.index, y=data['close'], name='Prix'), row=1, col=1)
     fig.add_trace(go.Scatter(x=data.index, y=data['MA_Short'], name='MM Courte'), row=1, col=1)
     fig.add_trace(go.Scatter(x=data.index, y=data['MA_Long'], name='MM Longue'), row=1, col=1)
     
-    # Signaux
     buys = data[data['Position'] == 'Buy']
     sells = data[data['Position'] == 'Sell']
     fig.add_trace(go.Scatter(x=buys.index, y=buys['close'], mode='markers', 
@@ -154,7 +152,6 @@ def plot_results(data):
     fig.add_trace(go.Scatter(x=sells.index, y=sells['close'], mode='markers', 
                            marker=dict(color='red', size=10), name='Vente'), row=1, col=1)
     
-    # RSI
     fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI'), row=2, col=1)
     
     fig.update_layout(height=800, title_text="Analyse Complète")
@@ -177,34 +174,70 @@ def plot_capital_evolution(data):
     )
     st.plotly_chart(fig)
 
-# 7. Interface Streamlit
-st.title("Backtesting BRVM Pro")
-st.sidebar.header("Configuration")
+# 7. Tableau des transactions chronologique
+def display_transactions_table(data):
+    transactions = data[data['Signal'] != 0].copy()
+    transactions = transactions.sort_index(ascending=True)  # Tri chronologique
+    
+    transactions['Type'] = transactions['Position'].apply(lambda x: 'Achat' if x == 'Buy' else 'Vente')
+    transactions['Quantité'] = transactions['Actions_Detenues'].diff().abs().fillna(transactions['Actions_Detenues'])
+    transactions['Résultat (CFA)'] = transactions['Trade_Result']/100 * transactions['close'] * transactions['Quantité']
+    
+    formatted_table = transactions[[
+        'Type', 'close', 'Quantité', 'Résultat (CFA)', 'Trade_Result'
+    ]].rename(columns={
+        'close': 'Prix',
+        'Trade_Result': 'Résultat (%)'
+    })
+    
+    st.write("**Journal des Transactions Chronologique**")
+    st.dataframe(
+        formatted_table.style.format({
+            'Prix': '{:.2f} CFA',
+            'Quantité': '{:.0f}',
+            'Résultat (%)': '{:.2f}%',
+            'Résultat (CFA)': '{:,.2f} CFA'
+        }),
+        height=600,
+        column_config={
+            "Type": st.column_config.TextColumn("Type", width="small"),
+            "Prix": st.column_config.NumberColumn("Prix (CFA)", format="%.2f CFA"),
+            "Quantité": st.column_config.NumberColumn("Quantité", format="%d"),
+            "Résultat (%)": st.column_config.ProgressColumn(
+                "Résultat (%)",
+                format="%.2f%%",
+                min_value=-100,
+                max_value=100
+            )
+        }
+    )
+
+# 8. Interface Streamlit
+st.title("📈 Backtesting BRVM Pro - Version Finale")
+st.sidebar.header("⚙️ Configuration")
 
 uploaded_file = st.sidebar.file_uploader("📤 Importer données historiques (CSV)", type=["csv"])
 if uploaded_file:
     data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date')
     data = data.rename(columns=lambda x: x.strip().lower())
     
-    # Paramètres
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        short_window = st.slider("Moyenne Courte", 5, 50, 20)
-        stop_loss = st.number_input("Stop-Loss (%)", 1.0, 20.0, 2.0)
+        short_window = st.slider("📏 Moyenne Courte", 5, 50, 20)
+        stop_loss = st.number_input("⛔ Stop-Loss (%)", 1.0, 20.0, 2.0)
     with col2:
-        long_window = st.slider("Moyenne Longue", 50, 200, 50)
-        take_profit = st.number_input("Take-Profit (%)", 1.0, 30.0, 4.0)
+        long_window = st.slider("📐 Moyenne Longue", 50, 200, 50)
+        take_profit = st.number_input("🎯 Take-Profit (%)", 1.0, 30.0, 4.0)
     
     capital = st.sidebar.number_input("💰 Capital Initial (CFA)", 10000, 10000000, 100000)
 
-    # Execution
     data = calculate_indicators(data, short_window, long_window)
     data = backtest_strategy(data, stop_loss, take_profit, capital)
     
-    # Résultats
     display_results(data, capital)
     plot_results(data)
     plot_capital_evolution(data)
+    display_transactions_table(data)  # Tableau ajouté ici
 
 else:
-    st.info("Veuillez uploader un fichier CSV pour commencer.")
+    st.info("ℹ️ Veuillez uploader un fichier CSV pour commencer.")
