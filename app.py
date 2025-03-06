@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+from datetime import datetime
 
 # 1. Calcul des indicateurs techniques avec options
 def calculate_indicators(data, short_window=20, long_window=50, 
@@ -49,7 +50,8 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=
 
     for i in range(1, len(data)):
         # Logique d'achat
-        if data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]:
+        if (data['MA_Short'].iloc[i] > data['MA_Long'].iloc[i] and data['MA_Short'].iloc[i-1] <= data['MA_Long'].iloc[i-1]) or \
+           (data['RSI'].iloc[i] < 30 and data['close'].iloc[i] < data['Bollinger_Lower'].iloc[i]):
             if not premier_achat_effectue:
                 prix_achat = data['close'].iloc[i]
                 actions_possibles = int(capital // prix_achat)
@@ -77,7 +79,8 @@ def backtest_strategy(data, stop_loss_pct=2, take_profit_pct=4, montant_investi=
             stop_loss = prix_moyen_achat * (1 - stop_loss_pct/100)
             take_profit = prix_moyen_achat * (1 + take_profit_pct/100)
             
-            if current_price <= stop_loss or current_price >= take_profit:
+            if current_price <= stop_loss or current_price >= take_profit or \
+               (data['RSI'].iloc[i] > 70 and data['close'].iloc[i] > data['Bollinger_Upper'].iloc[i]):
                 data.at[data.index[i], 'Signal'] = -1
                 data.at[data.index[i], 'Position'] = 'Sell'
                 capital += actions_detenues * current_price
@@ -258,6 +261,15 @@ def display_transactions_table(data):
 
 # 8. Interface Streamlit
 st.title("📈 Backtesting BRVM - Édition Professionnelle")
+
+# Barre de navigation pour la période de backtesting
+st.write("### Sélectionnez la période de backtesting")
+col1, col2 = st.columns(2)
+with col1:
+    start_date = st.date_input("Date de début", datetime(2020, 1, 1))
+with col2:
+    end_date = st.date_input("Date de fin", datetime.today())
+
 st.sidebar.header("⚙️ Configuration Générale")
 
 # Upload des données
@@ -290,6 +302,9 @@ with st.sidebar.expander("🎯 Paramètres de Stratégie"):
 if uploaded_file:
     data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date')
     data = data.rename(columns=lambda x: x.strip().lower())
+    
+    # Filtrage des données selon la période sélectionnée
+    data = data.loc[start_date:end_date]
     
     data = calculate_indicators(
         data,
