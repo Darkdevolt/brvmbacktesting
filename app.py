@@ -175,7 +175,7 @@ def plot_results(data, show_rsi=True, show_bollinger=True):
             x=data.index, 
             y=data['Bollinger_Upper'], 
             name='Bollinger Upper',
-            line=dict(color='rgba(200,200,200,0.5)'
+            line=dict(color='rgba(200,200,200,0.5)')
         ), row=1, col=1)
         
         fig.add_trace(go.Scatter(
