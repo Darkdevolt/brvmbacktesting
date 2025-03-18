@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import os
+from datetime import datetime
 
 # Titre de l'application
 st.title("Analyse de Données d'Actions avec DeepSeek")
@@ -16,6 +17,12 @@ def analyze_with_deepseek(data):
         "Authorization": f"Bearer {os.getenv('DEEPSEEK_API_KEY')}",  # Utilisez la clé API depuis les variables d'environnement
         "Content-Type": "application/json"
     }
+
+    # Convertir les colonnes de type Timestamp en chaînes de caractères
+    for col in data.columns:
+        if pd.api.types.is_datetime64_any_dtype(data[col]):
+            data[col] = data[col].astype(str)
+
     payload = {
         "data": data.to_dict(orient='records')  # Convertir les données en format JSON
     }
