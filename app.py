@@ -1,46 +1,53 @@
 import streamlit as st
 import pandas as pd
+import requests
 
-# Définition de la structure de référence
-expected_columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-dtypes_ref = {'Date': str, 'Open': float, 'High': float, 'Low': float, 'Close': float, 'Volume': float}
+st.title("Analyse de Données d'Actions avec DeepSeek")
 
-st.title("📊 Vérification de la Structure des Fichiers CSV")
-
-# Upload du fichier par l'utilisateur
-uploaded_file = st.file_uploader("Déposez votre fichier CSV", type=["csv"])
+# Upload du fichier Excel
+uploaded_file = st.file_uploader("Téléchargez votre fichier Excel", type=["xlsx"])
 
 if uploaded_file is not None:
-    try:
-        df = pd.read_csv(uploaded_file)
+    # Lire et traiter les données
+    df = pd.read_excel(uploaded_file)
+    st.write("Données brutes :")
+    st.write(df)
 
-        # Supprimer les espaces et mettre en minuscules pour éviter les erreurs
-        df.columns = df.columns.str.strip().str.lower()
-        expected_columns_lower = [col.lower() for col in expected_columns]
+    # Interpolation linéaire pour les données manquantes
+    if df.isnull().sum().any():
+        st.write("Données manquantes détectées. Interpolation en cours...")
+        df = df.interpolate(method='linear')
+        st.write("Données après interpolation :")
+        st.write(df)
 
-        # Vérification des colonnes (sans distinction majuscule/minuscule)
-        if list(df.columns) != expected_columns_lower:
-            st.error("❌ Erreur : La structure du fichier ne correspond pas au modèle attendu.")
-            st.write("Colonnes attendues :", expected_columns)
-            st.write("Colonnes trouvées :", list(df.columns))
-        else:
-            # Normalisation des noms de colonnes pour correspondre au format attendu
-            df.columns = expected_columns  # Remettre les noms exacts
+    # Trier par date
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df.sort_values(by='Date')
+    st.write("Données organisées par date :")
+    st.write(df)
 
-            # Vérification et conversion des types de données
-            type_errors = []
-            for col, expected_type in dtypes_ref.items():
-                try:
-                    df[col] = df[col].astype(expected_type)
-                except ValueError:
-                    type_errors.append(f"{col} (Attendu: {expected_type}, Trouvé: {df[col].dtype})")
+    # Bouton pour analyser avec DeepSeek
+    if st.button("Analyser avec DeepSeek"):
+        def analyze_with_deepseek(data):
+            api_url = "https://api.deepseek.com/v1/analyze"
+            headers = {
+                "Authorization": "Bearer VOTRE_CLE_API",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "data": data.to_dict(orient='records')
+            }
+            response = requests.post(api_url, json=payload, headers=headers)
+            return response.json()
 
-            if type_errors:
-                st.error("❌ Erreur : Les types de certaines colonnes ne correspondent pas.")
-                for err in type_errors:
-                    st.write(err)
-            else:
-                st.success("✅ Succès : Le fichier est valide et respecte la structure requise !")
+        result = analyze_with_deepseek(df)
+        st.write("Résultats de l'analyse DeepSeek :")
+        st.write(result)
 
-    except Exception as e:
-        st.error(f"❌ Erreur lors de la lecture du fichier : {e}")
+    # Télécharger les données traitées
+    st.download_button(
+        label="Télécharger les données traitées",
+        data=df.to_csv(index=False).encode('utf-8'),
+        file_name="donnees_traitees.csv",
+        mime="text/csv"
+    )
