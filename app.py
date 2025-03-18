@@ -1,76 +1,70 @@
 import streamlit as st
 import pandas as pd
-import requests
-import os
-from datetime import datetime
+from io import BytesIO
 
 # Titre de l'application
-st.title("Analyse de Données d'Actions avec DeepSeek")
+st.title("Correction et Traitement de Fichiers CSV/Excel")
 
-# Upload du fichier (CSV ou Excel)
-uploaded_file = st.file_uploader("Téléchargez votre fichier (CSV ou Excel)", type=["csv", "xlsx"])
-
-# Fonction pour interagir avec l'API DeepSeek
-def analyze_with_deepseek(data):
-    api_url = "https://api.deepseek.com/v1/analyze"  # Remplacez par l'URL réelle de l'API
-    headers = {
-        "Authorization": f"Bearer {os.getenv('DEEPSEEK_API_KEY')}",  # Utilisez la clé API depuis les variables d'environnement
-        "Content-Type": "application/json"
-    }
-
-    # Convertir les colonnes de type Timestamp en chaînes de caractères
-    for col in data.columns:
-        if pd.api.types.is_datetime64_any_dtype(data[col]):
-            data[col] = data[col].astype(str)
-
-    payload = {
-        "data": data.to_dict(orient='records')  # Convertir les données en format JSON
-    }
-    response = requests.post(api_url, json=payload, headers=headers)
-    return response.json()
+# Téléverser un fichier
+uploaded_file = st.file_uploader("Téléversez un fichier CSV ou Excel", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Lire le fichier en fonction de son type
+    # Lire le fichier
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
     elif uploaded_file.name.endswith('.xlsx'):
         df = pd.read_excel(uploaded_file)
     
-    # Afficher les données brutes
-    st.write("Données brutes :")
-    st.write(df)
+    # Afficher les premières lignes du fichier original
+    st.subheader("Aperçu du fichier original")
+    st.write(df.head())
 
-    # Vérifier les données manquantes
-    if df.isnull().sum().any():
-        st.write("Données manquantes détectées. Interpolation linéaire en cours...")
-        df = df.interpolate(method='linear')  # Interpolation linéaire
-        st.write("Données après interpolation :")
-        st.write(df)
+    # Correction des données
+    st.subheader("Correction des données")
 
-    # Trier les données par date (si une colonne "Date" existe)
+    # Colonnes à traiter (supprimer le point et convertir en entiers)
+    columns_to_convert = ['Dernier', 'Ouv.', 'Plus_Haut', 'Plus_Bas']
+    for col in columns_to_convert:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.replace('.', '').astype(int)
+
+    # Convertir la colonne 'Vol.' en nombre (supprimer 'K' et multiplier par 1000)
+    if 'Vol.' in df.columns:
+        df['Vol.'] = df['Vol.'].str.replace('K', '').astype(float) * 1000
+        df['Vol.'] = df['Vol.'].astype(int)  # Convertir en entier
+
+    # Convertir la colonne 'Date' en type datetime
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])  # Convertir en format datetime
-        df = df.sort_values(by='Date')  # Trier par date
-        st.write("Données organisées par date :")
-        st.write(df)
-    else:
-        st.warning("Aucune colonne 'Date' trouvée. Les données ne seront pas triées par date.")
+        df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y')
 
-    # Bouton pour analyser avec DeepSeek
-    if st.button("Analyser avec DeepSeek"):
-        try:
-            result = analyze_with_deepseek(df)
-            st.write("Résultats de l'analyse DeepSeek :")
-            st.write(result)
-        except Exception as e:
-            st.error(f"Une erreur s'est produite lors de l'analyse : {e}")
+    # Afficher les premières lignes du fichier corrigé
+    st.subheader("Aperçu du fichier corrigé")
+    st.write(df.head())
 
-    # Télécharger les données traitées
+    # Télécharger le fichier corrigé
+    st.subheader("Télécharger le fichier corrigé")
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Feuille1')
+    output.seek(0)
+
     st.download_button(
-        label="Télécharger les données traitées",
-        data=df.to_csv(index=False).encode('utf-8'),
-        file_name="donnees_traitees.csv",
-        mime="text/csv"
+        label="Télécharger le fichier corrigé (Excel)",
+        data=output,
+        file_name="fichier_corrige.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-else:
-    st.info("Veuillez télécharger un fichier CSV ou Excel pour commencer.")
+
+    # Option pour continuer à travailler avec le fichier corrigé
+    if st.checkbox("Continuer à travailler avec le fichier corrigé"):
+        st.subheader("Travaillez avec le fichier corrigé")
+        st.write("Vous pouvez maintenant effectuer des analyses supplémentaires ici.")
+        # Exemple : Afficher des statistiques descriptives
+        st.write("Statistiques descriptives :")
+        st.write(df.describe())
+
+        # Exemple : Filtrer les données
+        st.write("Filtrer les données :")
+        min_volume = st.slider("Volume minimum", min_value=int(df['Vol.'].min()), max_value=int(df['Vol.'].max()))
+        filtered_df = df[df['Vol.'] >= min_volume]
+        st.write(filtered_df)
