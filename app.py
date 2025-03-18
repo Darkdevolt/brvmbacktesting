@@ -1,48 +1,62 @@
 import streamlit as st
 import pandas as pd
 import requests
+import os
 
+# Titre de l'application
 st.title("Analyse de Données d'Actions avec DeepSeek")
 
-# Upload du fichier Excel
-uploaded_file = st.file_uploader("Téléchargez votre fichier Excel", type=["xlsx"])
+# Upload du fichier (CSV ou Excel)
+uploaded_file = st.file_uploader("Téléchargez votre fichier (CSV ou Excel)", type=["csv", "xlsx"])
+
+# Fonction pour interagir avec l'API DeepSeek
+def analyze_with_deepseek(data):
+    api_url = "https://api.deepseek.com/v1/analyze"  # Remplacez par l'URL réelle de l'API
+    headers = {
+        "Authorization": f"Bearer {os.getenv('DEEPSEEK_API_KEY')}",  # Utilisez la clé API depuis les variables d'environnement
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "data": data.to_dict(orient='records')  # Convertir les données en format JSON
+    }
+    response = requests.post(api_url, json=payload, headers=headers)
+    return response.json()
 
 if uploaded_file is not None:
-    # Lire et traiter les données
-    df = pd.read_excel(uploaded_file)
+    # Lire le fichier en fonction de son type
+    if uploaded_file.name.endswith('.csv'):
+        df = pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith('.xlsx'):
+        df = pd.read_excel(uploaded_file)
+    
+    # Afficher les données brutes
     st.write("Données brutes :")
     st.write(df)
 
-    # Interpolation linéaire pour les données manquantes
+    # Vérifier les données manquantes
     if df.isnull().sum().any():
-        st.write("Données manquantes détectées. Interpolation en cours...")
-        df = df.interpolate(method='linear')
+        st.write("Données manquantes détectées. Interpolation linéaire en cours...")
+        df = df.interpolate(method='linear')  # Interpolation linéaire
         st.write("Données après interpolation :")
         st.write(df)
 
-    # Trier par date
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values(by='Date')
-    st.write("Données organisées par date :")
-    st.write(df)
+    # Trier les données par date (si une colonne "Date" existe)
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])  # Convertir en format datetime
+        df = df.sort_values(by='Date')  # Trier par date
+        st.write("Données organisées par date :")
+        st.write(df)
+    else:
+        st.warning("Aucune colonne 'Date' trouvée. Les données ne seront pas triées par date.")
 
     # Bouton pour analyser avec DeepSeek
     if st.button("Analyser avec DeepSeek"):
-        def analyze_with_deepseek(data):
-            api_url = "https://api.deepseek.com/v1/analyze"
-            headers = {
-                "Authorization": "Bearer VOTRE_CLE_API",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "data": data.to_dict(orient='records')
-            }
-            response = requests.post(api_url, json=payload, headers=headers)
-            return response.json()
-
-        result = analyze_with_deepseek(df)
-        st.write("Résultats de l'analyse DeepSeek :")
-        st.write(result)
+        try:
+            result = analyze_with_deepseek(df)
+            st.write("Résultats de l'analyse DeepSeek :")
+            st.write(result)
+        except Exception as e:
+            st.error(f"Une erreur s'est produite lors de l'analyse : {e}")
 
     # Télécharger les données traitées
     st.download_button(
@@ -51,3 +65,5 @@ if uploaded_file is not None:
         file_name="donnees_traitees.csv",
         mime="text/csv"
     )
+else:
+    st.info("Veuillez télécharger un fichier CSV ou Excel pour commencer.")
