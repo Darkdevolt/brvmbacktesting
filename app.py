@@ -25,23 +25,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Style CSS
-st.markdown("""
-<style>
-    .main {max-width: 1200px;}
-    .stButton>button {background-color: #4CAF50; color: white;}
-    .stAlert {padding: 20px; border-radius: 5px;}
-    .st-bb {background-color: #f0f2f6;}
-    .st-at {background-color: #f0f2f6;}
-    .css-18e3th9 {padding: 2rem 1rem;}
-</style>
-""", unsafe_allow_html=True)
-
 # Titre et description
 st.title('📈 Application de Backtesting Trading')
-st.markdown("""
-Cette application permet de tester des stratégies de trading basées sur des indicateurs techniques.
-""")
+st.markdown("Cette application permet de tester des stratégies de trading basées sur des indicateurs techniques.")
 
 # Sidebar avec paramètres
 with st.sidebar:
@@ -56,7 +42,6 @@ with st.sidebar:
     
     st.markdown("---")
     st.header('📊 Indicateurs techniques')
-    
     sma_short = st.slider('Moyenne mobile courte', 5, 50, 20)
     sma_long = st.slider('Moyenne mobile longue', 50, 200, 50)
     rsi_period = st.slider('Période RSI', 5, 30, 14)
@@ -87,11 +72,19 @@ if data is None:
 
 # Calcul des indicateurs techniques
 def calculate_indicators(df):
-    # Utilisation de pandas_ta pour les indicateurs
-    df.ta.sma(length=sma_short, append=True, col_names=('SMA_short',))
-    df.ta.sma(length=sma_long, append=True, col_names=('SMA_long',))
-    df.ta.rsi(length=rsi_period, append=True, col_names=('RSI',))
-    df.ta.macd(append=True, col_names=('MACD', 'MACD_signal', 'MACD_hist'))
+    # Moyennes mobiles
+    df['SMA_short'] = df['Close'].rolling(sma_short).mean()
+    df['SMA_long'] = df['Close'].rolling(sma_long).mean()
+    
+    # RSI
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(rsi_period).mean()
+    avg_loss = loss.rolling(rsi_period).mean()
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
     return df
 
 data = calculate_indicators(data)
@@ -100,39 +93,16 @@ data = calculate_indicators(data)
 st.subheader('📋 Données du marché')
 st.dataframe(data.tail().style.format("{:.2f}"))
 
-# Graphiques
-st.subheader('📈 Visualisation des indicateurs')
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), gridspec_kw={'height_ratios': [3, 1]})
-
-# Prix et SMA
-ax1.plot(data.index, data['Close'], label='Prix', color='black', alpha=0.7)
-ax1.plot(data.index, data['SMA_short'], label=f'SMA {sma_short}', color='blue')
-ax1.plot(data.index, data['SMA_long'], label=f'SMA {sma_long}', color='red')
-ax1.set_title('Prix et Moyennes Mobiles')
-ax1.legend()
-ax1.grid(True)
-
-# RSI
-ax2.plot(data.index, data['RSI'], label='RSI', color='purple')
-ax2.axhline(rsi_overbought, color='red', linestyle='--')
-ax2.axhline(rsi_oversold, color='green', linestyle='--')
-ax2.set_title('RSI')
-ax2.set_ylim(0, 100)
-ax2.legend()
-ax2.grid(True)
-
-plt.tight_layout()
-st.pyplot(fig)
-
-# Stratégie de trading
+# Stratégie de trading corrigée
 class SMACrossRSIStrategy(Strategy):
     def init(self):
-        self.sma_short = self.I(ta.sma, self.data.Close, sma_short)
-        self.sma_long = self.I(ta.sma, self.data.Close, sma_long)
-        self.rsi = self.I(ta.rsi, self.data.Close, rsi_period)
+        self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
+        self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
+        self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
+                      -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean()))), self.data.Close)
     
     def next(self):
-        if (crossover(self.sma_short, self.sma_long) and (self.rsi < rsi_overbought):
+        if (crossover(self.sma_short, self.sma_long)) and (self.rsi < rsi_overbought):
             self.buy()
         elif (crossover(self.sma_long, self.sma_short)) and (self.rsi > rsi_oversold):
             self.sell()
@@ -167,8 +137,4 @@ if st.button('🚀 Lancer le Backtest', type='primary'):
 
 # Pied de page
 st.markdown("---")
-st.caption("""
-⚠️ **Note:** Cette application est à but éducatif seulement. 
-Les performances passées ne garantissent pas les résultats futurs.
-Le trading comporte des risques de perte en capital.
-""")
+st.caption("⚠️ Note: Cette application est à but éducatif seulement.")
