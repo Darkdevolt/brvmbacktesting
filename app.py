@@ -3,138 +3,207 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
-# Configuration pour éviter les conflits d'imports
-try:
-    import pandas_ta as ta
-except ImportError:
-    st.error("Erreur d'installation de pandas_ta. Vérifiez que la version 0.3.14b0 est installée.")
-    st.stop()
-
-try:
-    from backtesting import Backtest, Strategy
-    from backtesting.lib import crossover
-except ImportError:
-    st.error("Erreur d'installation de backtesting. Vérifiez que la version 0.3.3 est installée.")
-    st.stop()
+import plotly.express as px
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+from io import BytesIO
+import base64
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Backtesting Trading App",
+    page_title="Performance CAC 40",
     layout="wide",
-    initial_sidebar_state="expanded"
+    page_icon="📊"
 )
 
-# Titre et description
-st.title('📈 Application de Backtesting Trading')
-st.markdown("Cette application permet de tester des stratégies de trading basées sur des indicateurs techniques.")
+# Style CSS
+st.markdown("""
+<style>
+    .main {max-width: 1200px;}
+    .metric-box {border: 1px solid #ccc; border-radius: 5px; padding: 10px; margin: 5px 0;}
+    .positive {color: #2ecc71;}
+    .negative {color: #e74c3c;}
+    .header {font-size: 1.5em; font-weight: bold; margin: 10px 0;}
+    .ticker-header {background-color: #f0f2f6; padding: 10px; border-radius: 5px;}
+</style>
+""", unsafe_allow_html=True)
 
-# Sidebar avec paramètres
+# Titre
+st.title('📊 Performances des actions du CAC 40')
+
+# Liste des composants du CAC 40 avec leurs tickers Yahoo Finance
+CAC40_TICKERS = {
+    'AC.PA': 'Accor',
+    'AI.PA': 'Air Liquide',
+    'AIR.PA': 'Airbus',
+    'MT.PA': 'ArcelorMittal',
+    'ATO.PA': 'Atos',
+    'CS.PA': 'AXA',
+    'BNP.PA': 'BNP Paribas',
+    'EN.PA': 'Bouygues',
+    'CAP.PA': 'Capgemini',
+    'CA.PA': 'Carrefour',
+    'ACA.PA': 'Crédit Agricole',
+    'BN.PA': 'Danone',
+    'DSY.PA': 'Dassault Systèmes',
+    'ENGI.PA': 'Engie',
+    'EL.PA': 'EssilorLuxottica',
+    'RMS.PA': 'Hermès',
+    'KER.PA': 'Kering',
+    'LR.PA': 'Legrand',
+    'OR.PA': 'L\'Oréal',
+    'MC.PA': 'LVMH',
+    'ML.PA': 'Michelin',
+    'ORA.PA': 'Orange',
+    'RI.PA': 'Pernod Ricard',
+    'PUB.PA': 'Publicis',
+    'RNO.PA': 'Renault',
+    'SAF.PA': 'Safran',
+    'SGO.PA': 'Saint-Gobain',
+    'SAN.PA': 'Sanofi',
+    'SU.PA': 'Schneider Electric',
+    'GLE.PA': 'Société Générale',
+    'STLA.PA': 'Stellantis',
+    'STM.PA': 'STMicroelectronics',
+    'TEP.PA': 'Teleperformance',
+    'HO.PA': 'Thales',
+    'TTE.PA': 'TotalEnergies',
+    'VIE.PA': 'Veolia',
+    'DG.PA': 'Vinci',
+    'VIV.PA': 'Vivendi'
+}
+
+# Sidebar
 with st.sidebar:
-    st.header('⚙️ Paramètres')
-    ticker = st.text_input('Symbole boursier (ex: AAPL)', 'AAPL').upper()
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input('Date de début', pd.to_datetime('2020-01-01'))
-    with col2:
-        end_date = st.date_input('Date de fin', pd.to_datetime('2023-12-31'))
-    
+    st.header('Paramètres')
+    period = st.selectbox('Période', ['1j', '1sem', '1mo', '3mo', '6mo', '1an', 'YTD'], index=5)
+    benchmark = st.selectbox('Indice de référence', ['^FCHI', '^GSPC (S&P 500)', '^IXIC (NASDAQ)'], index=0)
     st.markdown("---")
-    st.header('📊 Indicateurs techniques')
-    sma_short = st.slider('Moyenne mobile courte', 5, 50, 20)
-    sma_long = st.slider('Moyenne mobile longue', 50, 200, 50)
-    rsi_period = st.slider('Période RSI', 5, 30, 14)
-    rsi_overbought = st.slider('Seuil RSI surachat', 50, 90, 70)
-    rsi_oversold = st.slider('Seuil RSI survente', 10, 50, 30)
-    
+    st.markdown("**Mise à jour:** " + datetime.now().strftime("%d/%m/%Y %H:%M"))
     st.markdown("---")
-    st.header('💰 Paramètres trading')
-    commission = st.number_input('Commission (%)', min_value=0.0, max_value=5.0, value=0.1, step=0.05) / 100
+    st.markdown("""
+    **Sources:**
+    - Yahoo Finance
+    - Wikipédia CAC 40
+    """)
 
-# Fonction pour charger les données
-@st.cache_data
-def load_data(ticker, start, end):
-    try:
-        data = yf.download(ticker, start=start, end=end, progress=False)
-        if data.empty:
-            st.error("Aucune donnée trouvée pour ce symbole.")
-            return None
-        return data
-    except Exception as e:
-        st.error(f"Erreur de téléchargement: {str(e)}")
-        return None
+# Fonction pour récupérer les données
+@st.cache_data(ttl=3600)  # Cache pour 1 heure
+def get_stock_data(tickers, period):
+    end_date = datetime.now()
+    
+    if period == '1j':
+        start_date = end_date - timedelta(days=1)
+    elif period == '1sem':
+        start_date = end_date - timedelta(weeks=1)
+    elif period == '1mo':
+        start_date = end_date - timedelta(days=30)
+    elif period == '3mo':
+        start_date = end_date - timedelta(days=90)
+    elif period == '6mo':
+        start_date = end_date - timedelta(days=180)
+    elif period == '1an':
+        start_date = end_date - timedelta(days=365)
+    elif period == 'YTD':
+        start_date = datetime(end_date.year, 1, 1)
+    
+    data = yf.download(list(tickers.keys()), start=start_date, end=end_date, group_by='ticker')
+    return data
 
-# Chargement des données
-data = load_data(ticker, start_date, end_date)
-if data is None:
+# Récupération des données
+try:
+    data = get_stock_data(CAC40_TICKERS, period)
+    if data.empty:
+        st.error("Erreur lors de la récupération des données. Veuillez réessayer plus tard.")
+        st.stop()
+except Exception as e:
+    st.error(f"Erreur: {str(e)}")
     st.stop()
 
-# Calcul des indicateurs techniques
-def calculate_indicators(df):
-    # Moyennes mobiles
-    df['SMA_short'] = df['Close'].rolling(sma_short).mean()
-    df['SMA_long'] = df['Close'].rolling(sma_long).mean()
-    
-    # RSI
-    delta = df['Close'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(rsi_period).mean()
-    avg_loss = loss.rolling(rsi_period).mean()
-    rs = avg_gain / avg_loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    return df
+# Calcul des performances
+performance_data = []
+for ticker in CAC40_TICKERS:
+    try:
+        if ticker in data:
+            close_prices = data[ticker]['Close']
+            if len(close_prices) > 1:
+                start_price = close_prices[0]
+                end_price = close_prices[-1]
+                change = ((end_price - start_price) / start_price) * 100
+                performance_data.append({
+                    'Ticker': ticker,
+                    'Société': CAC40_TICKERS[ticker],
+                    'Prix': end_price,
+                    'Variation (%)': change,
+                    'Performance': 'positive' if change >= 0 else 'negative'
+                })
+    except:
+        continue
 
-data = calculate_indicators(data)
+performance_df = pd.DataFrame(performance_data).sort_values('Variation (%)', ascending=False)
 
-# Affichage des données
-st.subheader('📋 Données du marché')
-st.dataframe(data.tail().style.format("{:.2f}"))
+# Affichage des métriques globales
+st.subheader('Performance globale du CAC 40')
+avg_performance = performance_df['Variation (%)'].mean()
+best_stock = performance_df.iloc[0]
+worst_stock = performance_df.iloc[-1]
 
-# Stratégie de trading corrigée
-class SMACrossRSIStrategy(Strategy):
-    def init(self):
-        self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
-        self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
-        self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
-                      -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean()))), self.data.Close)
-    
-    def next(self):
-        if (crossover(self.sma_short, self.sma_long)) and (self.rsi < rsi_overbought):
-            self.buy()
-        elif (crossover(self.sma_long, self.sma_short)) and (self.rsi > rsi_oversold):
-            self.sell()
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Performance moyenne", f"{avg_performance:.2f}%", delta=f"{avg_performance:.2f}%")
+with col2:
+    st.metric("Meilleure performance", 
+              f"{best_stock['Société']} ({best_stock['Ticker']})", 
+              f"{best_stock['Variation (%)']:.2f}%")
+with col3:
+    st.metric("Pire performance", 
+              f"{worst_stock['Société']} ({worst_stock['Ticker']})", 
+              f"{worst_stock['Variation (%)']:.2f}%")
 
-# Backtesting
-if st.button('🚀 Lancer le Backtest', type='primary'):
-    st.info("Calcul en cours...")
-    
-    # Préparation des données
-    data_bt = data.copy()
-    data_bt.columns = [col.lower() for col in data_bt.columns]
-    
-    # Exécution du backtest
-    bt = Backtest(data_bt, SMACrossRSIStrategy, commission=commission, cash=10000)
-    results = bt.run()
-    
-    # Affichage des résultats
-    st.success("Backtest terminé!")
-    
-    # Métriques principales
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Rendement (%)", f"{results['Return [%]']:.2f}")
-    col2.metric("Ratio de Sharpe", f"{results['Sharpe Ratio']:.2f}")
-    col3.metric("Max Drawdown (%)", f"{results['Max. Drawdown [%]']:.2f}")
-    
-    # Graphique des résultats
-    st.pyplot(bt.plot())
-    
-    # Détails des trades
-    st.subheader('📝 Historique des trades')
-    st.dataframe(results['_trades'])
+# Tableau des performances
+st.subheader('Détail par action')
+
+# Fonction pour colorer les valeurs
+def color_perf(val):
+    color = 'green' if val >= 0 else 'red'
+    return f'color: {color}'
+
+styled_df = performance_df.style.format({
+    'Prix': '{:.2f} €',
+    'Variation (%)': '{:.2f}%'
+}).applymap(color_perf, subset=['Variation (%)'])
+
+st.dataframe(styled_df, height=800, use_container_width=True)
+
+# Graphique des performances
+st.subheader('Visualisation des performances')
+fig = px.bar(performance_df, 
+             x='Société', 
+             y='Variation (%)',
+             color='Variation (%)',
+             color_continuous_scale=['red', 'green'],
+             labels={'Variation (%)': 'Variation (%)'},
+             height=600)
+
+fig.update_layout(xaxis_title='Société',
+                 yaxis_title='Variation (%)',
+                 coloraxis_showscale=False)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# Téléchargement des données
+csv = performance_df.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Télécharger les données",
+    data=csv,
+    file_name=f"cac40_performance_{datetime.now().strftime('%Y%m%d')}.csv",
+    mime='text/csv'
+)
 
 # Pied de page
 st.markdown("---")
-st.caption("⚠️ Note: Cette application est à but éducatif seulement.")
+st.caption("""
+**Disclaimer:** Les données financières sont fournies à titre informatif uniquement. 
+Les performances passées ne préjugent pas des performances futures.
+""")
