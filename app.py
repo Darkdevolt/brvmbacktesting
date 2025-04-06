@@ -91,12 +91,12 @@ def technical_analysis():
     data = calculate_indicators(data, sma_short, sma_long, rsi_period)
 
     # Stratégie de trading
-    class SMACrossRSIStrategy(Strategy):
-        def init(self):
-            self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
-            self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
-            self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
-                              -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean())), self.data.Close)
+class SMACrossRSIStrategy(Strategy):
+    def init(self):
+        self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
+        self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
+        self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
+                              -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean()))), self.data.Close)
         
         def next(self):
             if crossover(self.sma_short, self.sma_long) and (self.rsi < rsi_overbought):
