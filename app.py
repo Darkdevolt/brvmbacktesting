@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.express as px
-from ta.trend import SMAIndicator
-from ta.momentum import RSIIndicator
 from backtesting import Backtest, Strategy
 from backtesting.lib import crossover
 from datetime import datetime, timedelta
@@ -163,6 +161,25 @@ def general_analysis():
         'Variation (%)': '{:.2f}%'
     }), height=600)
 
+# Fonction pour calculer les indicateurs sans utiliser pandas_ta
+def calculate_indicators(df, sma_short, sma_long, rsi_period):
+    # Calcul des moyennes mobiles
+    df['SMA_short'] = df['Close'].rolling(window=sma_short).mean()
+    df['SMA_long'] = df['Close'].rolling(window=sma_long).mean()
+    
+    # Calcul du RSI
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    
+    avg_gain = gain.rolling(window=rsi_period).mean()
+    avg_loss = loss.rolling(window=rsi_period).mean()
+    
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    return df
+
 # Fonction pour l'analyse technique
 def technical_analysis():
     st.title('📈 Analyse Technique Avancée')
@@ -196,17 +213,16 @@ def technical_analysis():
         st.error(f"Erreur: {str(e)}")
         return
     
-    # Calcul des indicateurs
-    data['SMA_short'] = SMAIndicator(data['Close'], window=sma_short).sma_indicator()
-    data['SMA_long'] = SMAIndicator(data['Close'], window=sma_long).sma_indicator()
-    data['RSI'] = RSIIndicator(data['Close'], window=rsi_period).rsi()
+    # Calcul des indicateurs (version manuelle)
+    data = calculate_indicators(data, sma_short, sma_long, rsi_period)
     
     # Stratégie de trading
     class SMACrossRSIStrategy(Strategy):
         def init(self):
-            self.sma_short = self.I(SMAIndicator, self.data.Close, window=sma_short)
-            self.sma_long = self.I(SMAIndicator, self.data.Close, window=sma_long)
-            self.rsi = self.I(RSIIndicator, self.data.Close, window=rsi_period)
+            self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
+            self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
+            self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
+                          -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean()))), self.data.Close)
         
         def next(self):
             if (crossover(self.sma_short, self.sma_long)) and (self.rsi < rsi_overbought):
