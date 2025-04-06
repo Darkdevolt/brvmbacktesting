@@ -3,7 +3,6 @@ streamlit>=1.20.0
 pandas>=1.5.0
 numpy>=1.20.0
 plotly>=5.5.0
-pandas_ta>=0.3.14b0 # Use a specific, known good recent version
-yfinance>=0.2.0
-setuptools>=58.0.0 # Ensure a sufficiently recent setuptools
-# Add any other dependencies your app needs
+pandas_ta>=0.3.14b0
+yfinance>=0.2.0 # Assurez-vous que cette ligne est présente
+setuptools>=58.0.0
