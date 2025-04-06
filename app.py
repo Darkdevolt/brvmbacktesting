@@ -33,7 +33,7 @@ CAC40_TICKERS = {
 
 # Navigation
 st.sidebar.title('Navigation')
-app_mode = st.sidebar.radio("", ['Analyse Générale', 'Analyse Technique Avancée'])
+app_mode = st.sidebar.radio("", ['Analyse Technique Avancée'])
 
 def calculate_indicators(df, sma_short, sma_long, rsi_period):
     # Calcul des moyennes mobiles
@@ -91,12 +91,12 @@ def technical_analysis():
     data = calculate_indicators(data, sma_short, sma_long, rsi_period)
 
     # Stratégie de trading
-class SMACrossRSIStrategy(Strategy):
-    def init(self):
-        self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
-        self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
-        self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
-                              -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean()))), self.data.Close)
+    class SMACrossRSIStrategy(Strategy):
+        def init(self):
+            self.sma_short = self.I(lambda x: x.rolling(sma_short).mean(), self.data.Close)
+            self.sma_long = self.I(lambda x: x.rolling(sma_long).mean(), self.data.Close)
+            self.rsi = self.I(lambda x: 100 - (100 / (1 + (x.diff().where(x.diff() > 0, 0).rolling(rsi_period).mean() / 
+                              -x.diff().where(x.diff() < 0, 0).rolling(rsi_period).mean())), self.data.Close)
         
         def next(self):
             if crossover(self.sma_short, self.sma_long) and (self.rsi < rsi_overbought):
@@ -156,7 +156,8 @@ class SMACrossRSIStrategy(Strategy):
                 
                 # Graphique des performances
                 st.subheader('📉 Performance de la Stratégie')
-                st.pyplot(bt.plot())
+                fig = bt.plot()
+                st.pyplot(fig)
                 
                 # Détails des trades
                 st.subheader('📝 Détail des Trades')
@@ -179,7 +180,7 @@ class SMACrossRSIStrategy(Strategy):
             except Exception as e:
                 st.error(f"Erreur lors du backtest: {str(e)}")
 
-    # Visualisation des indicateurs
+    # Visualisation des indicateurs (en dehors de la classe de stratégie)
     st.subheader('📊 Indicateurs Techniques')
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
     
