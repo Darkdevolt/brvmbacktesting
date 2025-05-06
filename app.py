@@ -1,302 +1,597 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.stats import norm, jarque_bera, shapiro, kstest, anderson
 import matplotlib.pyplot as plt
-import statsmodels.api as sm
+import seaborn as sns
+from statsmodels.tsa.stattools import adfuller
+import yfinance as yf
+from datetime import datetime, timedelta
+import io
+import base64
 
 # Configuration de la page Streamlit
-st.set_page_config(layout="wide", page_title="Calculateur de VaR Gaussienne")
+st.set_page_config(
+    page_title="Calculateur de VaR Historique",
+    page_icon="📊",
+    layout="wide"
+)
 
-st.title("📈 Calculateur de VaR Gaussienne")
+# Styles CSS personnalisés
 st.markdown("""
-Bienvenue dans cet outil de calcul de la Valeur à Risque (VaR) Gaussienne.
-Chargez votre fichier CSV, sélectionnez les colonnes appropriées, puis suivez les étapes
-pour analyser vos données de rendement et estimer la VaR.
-""")
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1E88E5;
+        margin-bottom: 1rem;
+    }
+    .section-header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1E88E5;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .info-box {
+        background-color: #E3F2FD;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .warning-box {
+        background-color: #FFEBEE;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .result-box {
+        background-color: #E8F5E9;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- Étape 1 : Collecte des données de rendements ---
-st.header("Étape 1 : Collecte et sélection des données")
-uploaded_file = st.file_uploader("Chargez votre fichier CSV de données historiques", type="csv")
+def display_header():
+    """Affiche l'en-tête de l'application"""
+    st.markdown('<div class="main-header">Calculateur de VaR Historique (Non-Paramétrique)</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="info-box">
+    Cette application permet de calculer la Valeur à Risque (VaR) historique d'un portefeuille basée sur les rendements passés.
+    <ul>
+        <li><strong>VaR Historique</strong> : Mesure non-paramétrique basée sur la distribution empirique des rendements passés.</li>
+        <li><strong>Interprétation</strong> : Avec un niveau de confiance de X%, la perte ne dépassera pas la VaR dans (100-X)% des cas sur l'horizon spécifié.</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Initialiser les variables pour les noms de colonnes dans session_state si elles n'existent pas
-if 'date_column_name' not in st.session_state:
-    st.session_state.date_column_name = None
-if 'close_column_name' not in st.session_state:
-    st.session_state.close_column_name = None
-if 'columns_validated' not in st.session_state:
-    st.session_state.columns_validated = False
-if 'data_processed' not in st.session_state:
-    st.session_state.data_processed = None # Pour stocker les données traitées
+def get_data_source():
+    """Interface pour choisir la source des données"""
+    st.markdown('<div class="section-header">Source des données</div>', unsafe_allow_html=True)
+    
+    data_source = st.radio(
+        "Choisir la source des données:",
+        ["Yahoo Finance (Actions)", "Fichier CSV", "Données d'exemple"]
+    )
+    
+    if data_source == "Yahoo Finance (Actions)":
+        tickers = st.text_input("Symboles boursiers (séparés par des virgules)", "AAPL, MSFT, GOOGL")
+        start_date = st.date_input("Date de début", datetime.now() - timedelta(days=365*2))
+        end_date = st.date_input("Date de fin", datetime.now())
+        
+        if st.button("Charger les données"):
+            with st.spinner('Chargement des données depuis Yahoo Finance...'):
+                tickers_list = [ticker.strip() for ticker in tickers.split(',')]
+                data = download_data(tickers_list, start_date, end_date)
+                if data is not None:
+                    st.session_state.data = data
+                    st.session_state.returns = calculate_returns(data)
+                    st.success(f"Données chargées avec succès pour {', '.join(tickers_list)}")
+                else:
+                    st.error("Erreur lors du chargement des données. Veuillez vérifier les symboles boursiers.")
+    
+    elif data_source == "Fichier CSV":
+        uploaded_file = st.file_uploader("Télécharger un fichier CSV des prix ou rendements", type="csv")
+        
+        if uploaded_file is not None:
+            try:
+                data = pd.read_csv(uploaded_file, index_col=0, parse_dates=True)
+                
+                data_type = st.radio(
+                    "Type de données:",
+                    ["Prix", "Rendements déjà calculés"]
+                )
+                
+                if data_type == "Prix":
+                    st.session_state.data = data
+                    st.session_state.returns = calculate_returns(data)
+                else:
+                    st.session_state.returns = data
+                    st.session_state.data = None
+                
+                st.success("Fichier CSV chargé avec succès")
+            except Exception as e:
+                st.error(f"Erreur lors du chargement du fichier: {e}")
+    
+    elif data_source == "Données d'exemple":
+        if st.button("Charger les données d'exemple"):
+            with st.spinner('Chargement des données d'exemple...'):
+                data = load_sample_data()
+                st.session_state.data = data
+                st.session_state.returns = calculate_returns(data)
+                st.success("Données d'exemple chargées avec succès")
 
-if uploaded_file is not None:
+def download_data(tickers, start_date, end_date):
+    """Télécharge les données historiques depuis Yahoo Finance"""
     try:
-        data_initial = pd.read_csv(uploaded_file)
-        st.success("Fichier chargé avec succès !")
-        st.write("Aperçu des premières lignes du fichier chargé :")
-        st.write(data_initial.head())
-
-        available_columns = data_initial.columns.tolist()
-
-        st.subheader("Sélectionnez les colonnes à utiliser :")
-
-        # Logique pour pré-sélectionner si les noms communs existent
-        default_date_index = 0
-        if 'Date' in available_columns:
-            default_date_index = available_columns.index('Date')
-        elif 'date' in available_columns: # common alternative
-            default_date_index = available_columns.index('date')
-
-        # Filtre les colonnes disponibles pour 'Close' pour ne pas inclure la colonne déjà sélectionnée pour la date (si elle a été choisie)
-        # Cela sera mis à jour dynamiquement si Streamlit le permet facilement, sinon on pré-sélectionne.
-        # Pour la simplicité de ce script, on ne fait pas de mise à jour dynamique complexe ici.
-
-        default_close_index = 0
-        potential_close_columns = [col for col in available_columns] # On ne filtre pas encore dynamiquement
-        if 'Close' in potential_close_columns:
-            default_close_index = potential_close_columns.index('Close')
-        elif 'close' in potential_close_columns:
-            default_close_index = potential_close_columns.index('close')
-        elif 'Adj Close' in potential_close_columns: # common alternative
-            default_close_index = potential_close_columns.index('Adj Close')
-
-
-        col_select1, col_select2 = st.columns(2)
-        with col_select1:
-            selected_date_col = st.selectbox(
-                "Sélectionnez la colonne contenant les DATES :",
-                options=available_columns,
-                index=default_date_index,
-                key="sb_date_col"
-            )
-        with col_select2:
-            selected_close_col = st.selectbox(
-                "Sélectionnez la colonne contenant les prix de CLÔTURE :",
-                options=[col for col in available_columns if col != selected_date_col], # Évite de sélectionner la même colonne
-                index=([col for col in available_columns if col != selected_date_col].index('Close')
-                       if 'Close' in [col for col in available_columns if col != selected_date_col]
-                       else 0), # Tente de trouver 'Close' parmi les options restantes
-                key="sb_close_col"
-            )
-
-        if st.button("Valider la sélection des colonnes et traiter les données", key="validate_cols_button"):
-            if selected_date_col == selected_close_col:
-                st.error("La colonne des dates et la colonne des prix de clôture doivent être différentes.")
-                st.session_state.columns_validated = False
-            else:
-                st.session_state.date_column_name = selected_date_col
-                st.session_state.close_column_name = selected_close_col
-                st.session_state.columns_validated = True
-
-                # Traitement des données après validation
-                data = data_initial.copy() # Travailler sur une copie
-                try:
-                    # Convertir la colonne 'Date' en datetime
-                    data['Date_Processed'] = pd.to_datetime(data[st.session_state.date_column_name])
-                    data = data.sort_values(by='Date_Processed')
-                    data.set_index('Date_Processed', inplace=True)
-                except Exception as e:
-                    st.error(f"Erreur lors de la conversion de la colonne '{st.session_state.date_column_name}' en date. Assurez-vous qu'elle est dans un format de date valide. Erreur: {e}")
-                    st.session_state.columns_validated = False # Invalider si erreur
-                    st.stop()
-
-                # S'assurer que la colonne 'Close' est numérique
-                if not pd.api.types.is_numeric_dtype(data[st.session_state.close_column_name]):
-                    try:
-                        # Tenter une conversion, en avertissant l'utilisateur
-                        data[st.session_state.close_column_name] = pd.to_numeric(data[st.session_state.close_column_name], errors='coerce')
-                        if data[st.session_state.close_column_name].isnull().any():
-                            st.warning(f"Des valeurs non numériques dans la colonne '{st.session_state.close_column_name}' ont été converties en NaN après une tentative de conversion.")
-                    except Exception as e:
-                        st.error(f"La colonne '{st.session_state.close_column_name}' doit être de type numérique. Tentative de conversion échouée. Erreur: {e}")
-                        st.session_state.columns_validated = False # Invalider si erreur
-                        st.stop()
-
-                data.dropna(subset=[st.session_state.close_column_name], inplace=True) # Supprimer les lignes où le close est NaN après conversion
-
-                # Calcul des rendements
-                data['Rendements'] = np.log(data[st.session_state.close_column_name] / data[st.session_state.close_column_name].shift(1))
-                data.dropna(subset=['Rendements'], inplace=True) # Supprimer la première ligne NaN due au calcul du rendement
-
-                st.session_state.data_processed = data # Stocker les données traitées
-
-                st.success(f"Colonnes validées : Date='{st.session_state.date_column_name}', Clôture='{st.session_state.close_column_name}'. Données prêtes pour l'analyse.")
-                st.subheader("Aperçu des données de rendements calculés :")
-                st.write(st.session_state.data_processed[[st.session_state.close_column_name, 'Rendements']].head())
-
-                if len(st.session_state.data_processed['Rendements']) < 250:
-                    st.warning(f"Attention : Vous avez {len(st.session_state.data_processed['Rendements'])} observations de rendements. Il est recommandé d'en avoir au moins 250.")
-
-    except pd.errors.EmptyDataError:
-        st.error("Le fichier CSV est vide.")
-        st.session_state.columns_validated = False
-    except ValueError as ve:
-        st.error(f"Erreur de valeur dans les données du CSV. Vérifiez le format. Détail: {ve}")
-        st.session_state.columns_validated = False
+        data = yf.download(tickers, start=start_date, end=end_date)['Adj Close']
+        if isinstance(data, pd.Series):
+            data = pd.DataFrame(data, columns=[tickers[0]])
+        return data
     except Exception as e:
-        st.error(f"Une erreur est survenue lors du chargement ou de la pré-sélection des colonnes : {e}")
-        st.session_state.columns_validated = False
+        st.error(f"Erreur lors du téléchargement des données: {e}")
+        return None
 
-# Le reste de l'application ne s'exécute que si les colonnes ont été validées et les données traitées
-if st.session_state.columns_validated and st.session_state.data_processed is not None:
-    data_for_analysis = st.session_state.data_processed
-    rendements = data_for_analysis['Rendements']
+def load_sample_data():
+    """Charge des données d'exemple"""
+    # Créer des données simulées pour 3 actifs sur 2 ans
+    np.random.seed(42)
+    dates = pd.date_range(start='2022-01-01', end='2023-12-31', freq='B')
+    
+    # Simuler des prix avec une tendance haussière et des fluctuations
+    asset1 = 100 * (1 + np.cumsum(np.random.normal(0.0005, 0.015, len(dates))))
+    asset2 = 50 * (1 + np.cumsum(np.random.normal(0.0003, 0.012, len(dates))))
+    asset3 = 75 * (1 + np.cumsum(np.random.normal(0.0007, 0.018, len(dates))))
+    
+    data = pd.DataFrame({
+        'Asset1': asset1,
+        'Asset2': asset2,
+        'Asset3': asset3
+    }, index=dates)
+    
+    return data
 
-    # --- Étape 2 : Analyse descriptive ---
-    st.header("Étape 2 : Analyse descriptive")
-    moyenne = rendements.mean()
-    ecart_type = rendements.std()
-    skewness_val = rendements.skew() # Renommé pour éviter conflit avec module
-    kurtosis_val = rendements.kurtosis() # Kurtosis de Fisher (excès), normal = 0
+def calculate_returns(data):
+    """Calcule les rendements journaliers à partir des prix"""
+    returns = data.pct_change().dropna()
+    return returns
 
-    st.subheader("Statistiques descriptives des rendements :")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Moyenne (μ)", f"{moyenne:.6f}")
-    col2.metric("Écart-type (σ)", f"{ecart_type:.6f}")
-    col3.metric("Skewness", f"{skewness_val:.4f}")
-    col4.metric("Kurtosis (excès)", f"{kurtosis_val:.4f}")
+def portfolio_allocation():
+    """Interface pour allouer les poids du portefeuille"""
+    st.markdown('<div class="section-header">Allocation du portefeuille</div>', unsafe_allow_html=True)
+    
+    if 'returns' not in st.session_state:
+        st.warning("Veuillez d'abord charger des données")
+        return None
+    
+    assets = st.session_state.returns.columns.tolist()
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.write("Définir les poids des actifs dans le portefeuille :")
+        
+        # Créer des sliders pour chaque actif
+        weights = {}
+        for asset in assets:
+            weights[asset] = st.slider(f"Poids de {asset} (%)", 0, 100, int(100/len(assets)))
+        
+        # Normaliser les poids
+        total_weight = sum(weights.values())
+        if total_weight != 100:
+            st.warning(f"La somme des poids ({total_weight}%) n'est pas égale à 100%. Les poids seront normalisés.")
+        
+        normalized_weights = {asset: weight/total_weight for asset, weight in weights.items()}
+        
+    with col2:
+        st.write("**Poids normalisés :**")
+        for asset, weight in normalized_weights.items():
+            st.write(f"{asset}: {weight*100:.2f}%")
+    
+    # Créer un poids comme un array numpy
+    weight_array = np.array([normalized_weights[asset] for asset in assets])
+    
+    return weight_array
 
-    if skewness_val != 0 or kurtosis_val > 0:
-        st.warning("La skewness non nulle ou la kurtosis (excès) > 0 suggère une distribution potentiellement non normale.")
+def calculate_portfolio_returns(returns, weights):
+    """Calcule les rendements du portefeuille"""
+    portfolio_returns = (returns * weights).sum(axis=1)
+    return portfolio_returns
+
+def verify_data_quality(returns):
+    """Vérifie la qualité des données de rendement"""
+    st.markdown('<div class="section-header">Vérification de la qualité des données</div>', unsafe_allow_html=True)
+    
+    # Vérifier les valeurs manquantes
+    missing_values = returns.isnull().sum().sum()
+    if missing_values > 0:
+        st.warning(f"Attention: {missing_values} valeurs manquantes détectées dans les rendements")
     else:
-        st.info("La skewness et la kurtosis sont proches des valeurs attendues pour une distribution normale.")
-
-    # --- Étape 3 : Test de normalité ---
-    st.header("Étape 3 : Tests de normalité")
-    st.markdown("Objectif : vérifier si les rendements suivent une loi normale.")
-
-    alpha_test = st.slider("Seuil de significativité (alpha) pour les tests de normalité :", 0.01, 0.10, 0.05, 0.01, key="alpha_slider")
-
-    jb_stat, jb_p_value = jarque_bera(rendements)
-    shapiro_stat, shapiro_p_value = shapiro(rendements)
-    ks_stat, ks_p_value = kstest(rendements, 'norm', args=(moyenne, ecart_type))
-    ad_test = anderson(rendements, dist='norm')
-
-    st.subheader("Résultats des tests statistiques :")
-    results_df = pd.DataFrame({
-        "Test": ["Jarque-Bera", "Shapiro-Wilk", "Kolmogorov-Smirnov", "Anderson-Darling"],
-        "Statistique du test": [f"{jb_stat:.4f}", f"{shapiro_stat:.4f}", f"{ks_stat:.4f}", f"{ad_test.statistic:.4f}"],
-        "P-value": [f"{jb_p_value:.4f}", f"{shapiro_p_value:.4f}", f"{ks_p_value:.4f}", "Voir ci-dessous"]
-    })
-    st.table(results_df)
-
-    st.markdown("**Interprétation pour Anderson-Darling :**")
-    for i in range(len(ad_test.critical_values)):
-        sl, cv = ad_test.significance_level[i], ad_test.critical_values[i]
-        if ad_test.statistic < cv:
-            st.write(f"Statistique ({ad_test.statistic:.3f}) < valeur critique ({cv:.3f}) au niveau de significativité de {sl}%. On ne rejette pas la normalité.")
+        st.success("Aucune valeur manquante détectée dans les rendements")
+    
+    # Vérifier les valeurs aberrantes (méthode simple basée sur les écarts-types)
+    mean = returns.mean()
+    std = returns.std()
+    threshold = 3
+    outliers = ((returns - mean).abs() > (threshold * std)).sum().sum()
+    
+    if outliers > 0:
+        st.warning(f"Attention: {outliers} valeurs potentiellement aberrantes détectées (> {threshold} écarts-types)")
+    else:
+        st.success("Aucune valeur aberrante détectée")
+    
+    # Test de stationnarité (Augmented Dickey-Fuller)
+    portfolio_returns = st.session_state.portfolio_returns
+    adf_result = adfuller(portfolio_returns.dropna())
+    
+    stationarity_expander = st.expander("Résultats du test de stationnarité (Dickey-Fuller augmenté)")
+    with stationarity_expander:
+        st.write(f"Statistique ADF: {adf_result[0]:.4f}")
+        st.write(f"P-value: {adf_result[1]:.4f}")
+        st.write("Valeurs critiques:")
+        for key, value in adf_result[4].items():
+            st.write(f"   {key}: {value:.4f}")
+        
+        if adf_result[1] < 0.05:
+            st.success("Les rendements semblent stationnaires (p-value < 0.05)")
         else:
-            st.write(f"Statistique ({ad_test.statistic:.3f}) > valeur critique ({cv:.3f}) au niveau de significativité de {sl}%. On rejette la normalité.")
-
-    normality_rejected = False
-    if jb_p_value < alpha_test:
-        st.warning(f"Test de Jarque-Bera : P-value ({jb_p_value:.4f}) < {alpha_test} → On rejette l'hypothèse de normalité.")
-        normality_rejected = True
-    # ... (les autres tests de normalité suivent la même logique)
-    else:
-        st.success(f"Test de Jarque-Bera : P-value ({jb_p_value:.4f}) >= {alpha_test} → On ne rejette pas l'hypothèse de normalité.")
-
-    if shapiro_p_value < alpha_test:
-        st.warning(f"Test de Shapiro-Wilk : P-value ({shapiro_p_value:.4f}) < {alpha_test} → On rejette l'hypothèse de normalité.")
-        normality_rejected = True if not normality_rejected else True # Conserver True si déjà rejeté
-    else:
-        st.success(f"Test de Shapiro-Wilk : P-value ({shapiro_p_value:.4f}) >= {alpha_test} → On ne rejette pas l'hypothèse de normalité.")
-
-    if ks_p_value < alpha_test:
-        st.warning(f"Test de Kolmogorov-Smirnov : P-value ({ks_p_value:.4f}) < {alpha_test} → On rejette l'hypothèse de normalité.")
-        normality_rejected = True if not normality_rejected else True
-    else:
-        st.success(f"Test de Kolmogorov-Smirnov : P-value ({ks_p_value:.4f}) >= {alpha_test} → On ne rejette pas l'hypothèse de normalité.")
-
-
-    # --- Étape 4 : Visualisation ---
-    st.header("Étape 4 : Visualisation")
-
-    st.subheader("Histogramme des rendements avec courbe de densité normale")
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.hist(rendements, bins=50, density=True, alpha=0.6, color='g', label='Distribution des rendements')
-    xmin, xmax_hist = ax.get_xlim() # Renommé pour éviter conflit
-    x_norm = np.linspace(xmin, xmax_hist, 100) # Renommé pour éviter conflit
-    p_norm = norm.pdf(x_norm, moyenne, ecart_type) # Renommé pour éviter conflit
-    ax.plot(x_norm, p_norm, 'k', linewidth=2, label='Densité normale théorique')
-    ax.set_title("Histogramme des rendements et densité normale")
-    ax.set_xlabel("Rendements")
-    ax.set_ylabel("Densité")
-    ax.legend()
+            st.warning("Les rendements pourraient ne pas être stationnaires (p-value >= 0.05)")
+    
+    # Afficher les statistiques descriptives
+    stats_expander = st.expander("Statistiques descriptives des rendements")
+    with stats_expander:
+        st.write(returns.describe())
+    
+    # Visualisation de la distribution des rendements
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Graphique de la série temporelle
+    portfolio_returns.plot(ax=axs[0])
+    axs[0].set_title("Rendements du portefeuille")
+    axs[0].set_xlabel("Date")
+    axs[0].set_ylabel("Rendement")
+    
+    # Histogramme
+    sns.histplot(portfolio_returns, kde=True, ax=axs[1])
+    axs[1].set_title("Distribution des rendements")
+    axs[1].set_xlabel("Rendement")
+    axs[1].set_ylabel("Fréquence")
+    
+    plt.tight_layout()
     st.pyplot(fig)
 
-    st.subheader("Q-Q Plot (Quantile-Quantile Plot)")
-    fig_qq = plt.figure(figsize=(8, 6))
-    sm.qqplot(rendements, line='s', ax=fig_qq.gca())
-    plt.title("Q-Q Plot des rendements vs. Distribution Normale")
-    st.pyplot(fig_qq)
-    st.markdown("""
-    Un Q-Q plot compare les quantiles de vos données aux quantiles d'une distribution normale théorique.
-    Si les points suivent de près la ligne rouge, cela suggère que les données sont normalement distribuées.
-    Des déviations systématiques de la ligne indiquent une non-normalité.
-    """)
-
-    # --- Étape 5 : Choix de la méthode VaR ---
-    st.header("Étape 5 : Calcul de la VaR Gaussienne")
-
-    if normality_rejected:
-        st.error("""
-        **Attention :** Les tests de normalité et/ou l'analyse descriptive suggèrent que
-        la distribution des rendements **n'est probablement PAS normale**.
-        La VaR gaussienne pourrait ne pas être appropriée.
-        Envisagez des méthodes alternatives.
-        """)
+def calculate_var(returns, confidence_level, holding_period, portfolio_value):
+    """Calcule la VaR historique"""
+    # Ajuster pour l'horizon de risque (règle de la racine carrée du temps)
+    if holding_period > 1:
+        # Pour la VaR historique sur plusieurs jours
+        adj_returns = returns * np.sqrt(holding_period)
     else:
-        st.success("""
-        Les tests ne rejettent pas fortement l'hypothèse de normalité.
-        Vous pouvez procéder avec la VaR gaussienne, mais restez prudent.
-        """)
+        adj_returns = returns
+    
+    # Calculer le quantile empirique
+    var_percentile = 1 - confidence_level
+    var_return = np.percentile(adj_returns, var_percentile * 100)
+    
+    # Convertir en valeur monétaire
+    var_value = -var_return * portfolio_value
+    
+    return var_value, var_return
 
-    st.subheader("Calcul de la VaR Gaussienne")
-    conf_level_percent = st.slider("Niveau de confiance pour la VaR (en %)", 90.0, 99.9, 95.0, 0.1, key="conf_level_slider")
-    conf_level = conf_level_percent / 100.0
-    horizon_var = st.number_input("Horizon de la VaR (en jours)", min_value=1, value=1, step=1, key="horizon_input")
+def test_var_sensitivity(returns, portfolio_value, confidence_levels, holding_periods):
+    """Teste la sensibilité de la VaR à différents paramètres"""
+    results = []
+    
+    for cl in confidence_levels:
+        for hp in holding_periods:
+            var_value, var_return = calculate_var(returns, cl, hp, portfolio_value)
+            results.append({
+                "Niveau de confiance": f"{cl*100:.1f}%",
+                "Horizon (jours)": hp,
+                "VaR (%)": f"{-var_return*100:.2f}%",
+                "VaR (valeur)": f"{var_value:.2f}"
+            })
+    
+    return pd.DataFrame(results)
 
-    var_rendement_1_jour = moyenne + norm.ppf(1 - conf_level) * ecart_type
-    var_percent_1_jour = -var_rendement_1_jour * 100
+def calculate_expected_shortfall(returns, confidence_level, holding_period, portfolio_value):
+    """Calcule l'Expected Shortfall (ES) à partir des rendements"""
+    # Seuil VaR
+    var_percentile = 1 - confidence_level
+    var_threshold = np.percentile(returns, var_percentile * 100)
+    
+    # Sélectionner les rendements inférieurs au seuil VaR
+    tail_returns = returns[returns <= var_threshold]
+    
+    # Calculer l'ES comme la moyenne des rendements dans la queue
+    es_return = tail_returns.mean()
+    
+    # Ajuster pour l'horizon de risque
+    if holding_period > 1:
+        es_return = es_return * np.sqrt(holding_period)
+    
+    # Convertir en valeur monétaire
+    es_value = -es_return * portfolio_value
+    
+    return es_value, es_return
 
-    var_rendement_h_jours = (moyenne * horizon_var) + (norm.ppf(1 - conf_level) * ecart_type * np.sqrt(horizon_var))
-    var_percent_h_jours = -var_rendement_h_jours * 100
+def backtest_var(returns, confidence_level, holding_period, window_size=252):
+    """Effectue un backtest de la VaR sur une fenêtre glissante"""
+    results = []
+    
+    for i in range(window_size, len(returns)):
+        # Fenêtre glissante
+        window = returns.iloc[i-window_size:i]
+        
+        # Date du point de test
+        test_date = returns.index[i]
+        
+        # Rendement réel
+        actual_return = returns.iloc[i]
+        
+        # Calculer la VaR sur la fenêtre
+        _, var_return = calculate_var(window.values, confidence_level, holding_period, 1.0)
+        
+        # Violation de la VaR?
+        var_breach = actual_return < var_return
+        
+        results.append({
+            "Date": test_date,
+            "Rendement Réel": actual_return,
+            "VaR (%)": var_return,
+            "Violation": var_breach
+        })
+    
+    return pd.DataFrame(results)
 
-    st.subheader(f"Résultats de la VaR Gaussienne ({conf_level_percent}%) :")
-    st.metric(f"VaR à 1 jour (perte maximale en % du portefeuille)", f"{var_percent_1_jour:.4f}%")
-    if horizon_var > 1:
-        st.metric(f"VaR à {horizon_var} jours (perte maximale en % du portefeuille)", f"{var_percent_h_jours:.4f}%")
+def download_results(var_results, es_results, sensitivity_results, backtest_results=None):
+    """Prépare un fichier Excel pour télécharger les résultats"""
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Résultats de la VaR
+        var_df = pd.DataFrame([var_results])
+        var_df.to_excel(writer, sheet_name='VaR_Results', index=False)
+        
+        # Résultats de l'ES
+        es_df = pd.DataFrame([es_results])
+        es_df.to_excel(writer, sheet_name='ES_Results', index=False)
+        
+        # Analyse de sensibilité
+        sensitivity_results.to_excel(writer, sheet_name='Sensitivity_Analysis', index=False)
+        
+        # Backtest (si disponible)
+        if backtest_results is not None:
+            backtest_results.to_excel(writer, sheet_name='Backtest_Results', index=False)
+    
+    processed_data = output.getvalue()
+    b64 = base64.b64encode(processed_data).decode()
+    return f'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}'
 
-    st.markdown(f"""
-    Interprétation : Il y a une probabilité de **{1-conf_level:.2%}** que la perte sur 1 jour dépasse **{var_percent_1_jour:.4f}%**.
+def run_var_calculation():
+    """Effectue le calcul de la VaR avec les paramètres sélectionnés"""
+    st.markdown('<div class="section-header">Paramètres de la VaR</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        confidence_level = st.slider("Niveau de confiance (%)", 90, 99, 95) / 100
+        holding_period = st.number_input("Horizon de risque (jours)", 1, 30, 1, 1)
+    
+    with col2:
+        portfolio_value = st.number_input("Valeur du portefeuille", 10000.0, 10000000.0, 100000.0, 10000.0)
+    
+    if st.button("Calculer la VaR"):
+        portfolio_returns = st.session_state.portfolio_returns
+        
+        # Vérifier si nous avons suffisamment de données
+        if len(portfolio_returns) < 250:
+            st.warning(f"Attention: Seulement {len(portfolio_returns)} observations disponibles. Il est recommandé d'avoir au moins 250 observations.")
+        
+        # Calculer la VaR
+        var_value, var_return = calculate_var(portfolio_returns.values, confidence_level, holding_period, portfolio_value)
+        
+        # Calculer l'Expected Shortfall
+        es_value, es_return = calculate_expected_shortfall(portfolio_returns.values, confidence_level, holding_period, portfolio_value)
+        
+        # Afficher les résultats
+        st.markdown('<div class="result-box">', unsafe_allow_html=True)
+        st.markdown(f"### Résultats VaR et Expected Shortfall")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"**VaR {confidence_level*100:.1f}% sur {holding_period} jour(s):**")
+            st.markdown(f"- **Pourcentage:** {-var_return*100:.2f}%")
+            st.markdown(f"- **Montant:** {var_value:.2f}")
+        
+        with col2:
+            st.markdown(f"**Expected Shortfall {confidence_level*100:.1f}% sur {holding_period} jour(s):**")
+            st.markdown(f"- **Pourcentage:** {-es_return*100:.2f}%")
+            st.markdown(f"- **Montant:** {es_value:.2f}")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Stocker les résultats dans la session
+        st.session_state.var_results = {
+            "Niveau de confiance": f"{confidence_level*100:.1f}%",
+            "Horizon de risque": holding_period,
+            "VaR (%)": f"{-var_return*100:.2f}%",
+            "VaR (valeur)": var_value
+        }
+        
+        st.session_state.es_results = {
+            "Niveau de confiance": f"{confidence_level*100:.1f}%",
+            "Horizon de risque": holding_period,
+            "ES (%)": f"{-es_return*100:.2f}%",
+            "ES (valeur)": es_value
+        }
+        
+        # Analyse de sensibilité
+        st.markdown('<div class="section-header">Analyse de sensibilité</div>', unsafe_allow_html=True)
+        
+        confidence_levels = [0.90, 0.95, 0.99]
+        holding_periods = [1, 5, 10, 20]
+        
+        sensitivity_results = test_var_sensitivity(
+            portfolio_returns.values, 
+            portfolio_value, 
+            confidence_levels, 
+            holding_periods
+        )
+        
+        st.write(sensitivity_results)
+        st.session_state.sensitivity_results = sensitivity_results
+        
+        # Backtest
+        if len(portfolio_returns) > 500:  # Seulement si nous avons suffisamment de données
+            st.markdown('<div class="section-header">Backtest de la VaR</div>', unsafe_allow_html=True)
+            
+            backtest_results = backtest_var(
+                portfolio_returns,
+                confidence_level,
+                holding_period
+            )
+            
+            # Calculer le taux de violation
+            violation_rate = backtest_results['Violation'].mean()
+            expected_rate = 1 - confidence_level
+            
+            st.write(f"**Taux de violation:** {violation_rate:.2%} (Attendu: {expected_rate:.2%})")
+            
+            # Graphique du backtest
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(backtest_results['Date'], backtest_results['Rendement Réel'], label='Rendement réel', color='blue')
+            ax.plot(backtest_results['Date'], backtest_results['VaR (%)'], label='VaR', color='red')
+            ax.fill_between(
+                backtest_results['Date'],
+                backtest_results['VaR (%)'],
+                backtest_results['Rendement Réel'].min() * 1.1,
+                where=(backtest_results['Rendement Réel'] < backtest_results['VaR (%)']),
+                color='red',
+                alpha=0.3,
+                label='Violations'
+            )
+            ax.set_title(f"Backtest de la VaR {confidence_level*100:.1f}% sur {holding_period} jour(s)")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Rendement")
+            ax.legend()
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            st.session_state.backtest_results = backtest_results
+        
+        # Téléchargement des résultats
+        backtest_data = st.session_state.get('backtest_results', None)
+        excel_data = download_results(
+            st.session_state.var_results,
+            st.session_state.es_results,
+            st.session_state.sensitivity_results,
+            backtest_data
+        )
+        
+        st.markdown(
+            f'<a href="{excel_data}" download="var_results.xlsx">Télécharger les résultats (Excel)</a>',
+            unsafe_allow_html=True
+        )
+
+def main():
+    display_header()
+    
+    # Menu latéral avec étapes
+    st.sidebar.markdown("## Étapes")
+    step = st.sidebar.radio(
+        "Sélectionner une étape:",
+        ["1. Chargement des données", 
+         "2. Allocation du portefeuille", 
+         "3. Vérification de la qualité", 
+         "4. Calcul de la VaR"]
+    )
+    
+    if step == "1. Chargement des données":
+        get_data_source()
+        
+        # Afficher un aperçu des données chargées
+        if 'returns' in st.session_state:
+            st.markdown('<div class="section-header">Aperçu des rendements</div>', unsafe_allow_html=True)
+            st.write(st.session_state.returns.head())
+            
+            # Statistiques de base
+            st.write(f"**Période:** {st.session_state.returns.index.min()} à {st.session_state.returns.index.max()}")
+            st.write(f"**Nombre d'observations:** {len(st.session_state.returns)}")
+            
+            # Graphique des rendements
+            st.markdown('<div class="section-header">Visualisation des rendements</div>', unsafe_allow_html=True)
+            fig, ax = plt.subplots(figsize=(10, 5))
+            st.session_state.returns.plot(ax=ax)
+            ax.set_title("Rendements des actifs")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Rendement")
+            plt.tight_layout()
+            st.pyplot(fig)
+    
+    elif step == "2. Allocation du portefeuille":
+        if 'returns' not in st.session_state:
+            st.warning("Veuillez d'abord charger des données (étape 1)")
+        else:
+            weights = portfolio_allocation()
+            
+            if weights is not None:
+                # Calculer les rendements du portefeuille
+                portfolio_returns = calculate_portfolio_returns(st.session_state.returns, weights)
+                st.session_state.portfolio_returns = portfolio_returns
+                
+                # Afficher les statistiques du portefeuille
+                st.markdown('<div class="section-header">Statistiques du portefeuille</div>', unsafe_allow_html=True)
+                
+                stats = {
+                    "Rendement moyen (annualisé)": f"{portfolio_returns.mean() * 252 * 100:.2f}%",
+                    "Volatilité (annualisée)": f"{portfolio_returns.std() * np.sqrt(252) * 100:.2f}%",
+                    "Rendement minimum": f"{portfolio_returns.min() * 100:.2f}%",
+                    "Rendement maximum": f"{portfolio_returns.max() * 100:.2f}%"
+                }
+                
+                col1, col2 = st.columns(2)
+                
+                for i, (key, value) in enumerate(stats.items()):
+                    if i < 2:
+                        col1.metric(key, value)
+                    else:
+                        col2.metric(key, value)
+                
+                # Graphique des rendements du portefeuille
+                fig, ax = plt.subplots(figsize=(10, 5))
+                portfolio_returns.plot(ax=ax)
+                ax.set_title("Rendements du portefeuille")
+                ax.set_xlabel("Date")
+                ax.set_ylabel("Rendement")
+                plt.tight_layout()
+                st.pyplot(fig)
+    
+    elif step == "3. Vérification de la qualité":
+        if 'portfolio_returns' not in st.session_state:
+            st.warning("Veuillez d'abord configurer l'allocation du portefeuille (étape 2)")
+        else:
+            verify_data_quality(st.session_state.returns)
+    
+    elif step == "4. Calcul de la VaR":
+        if 'portfolio_returns' not in st.session_state:
+            st.warning("Veuillez d'abord configurer l'allocation du portefeuille (étape 2)")
+        else:
+            run_var_calculation()
+    
+    # Informations dans la barre latérale
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### À propos")
+    st.sidebar.info("""
+    **Calculateur de VaR Historique**
+    
+    Cette application permet de calculer la Valeur à Risque (VaR) historique 
+    d'un portefeuille à partir des rendements historiques.
+    
+    Développé en utilisant Streamlit.
     """)
-    if horizon_var > 1:
-        st.markdown(f"""
-        Il y a une probabilité de **{1-conf_level:.2%}** que la perte sur {horizon_var} jours dépasse **{var_percent_h_jours:.4f}%**.
-        """)
 
-    st.markdown("""
-    **Formule utilisée pour la VaR du rendement :**
-    $$ VaR_{rendement, \\alpha} = \\mu + z_{\\alpha} \\cdot \\sigma $$
-    Pour un horizon de $H$ jours :
-    $$ VaR_{rendement, \\alpha, H} = \\mu \\cdot H + z_{\\alpha} \\cdot \\sigma \\cdot \\sqrt{H} $$
-    """)
-
-    # --- Étape 6 : Backtesting (Placeholder) ---
-    st.header("Étape 6 : Backtesting (non implémenté)")
-    st.info("Le backtesting est crucial mais non implémenté ici.")
-
-elif uploaded_file is not None and not st.session_state.columns_validated:
-    st.info("Veuillez valider la sélection des colonnes pour continuer l'analyse.")
-elif uploaded_file is None:
-    st.info("Veuillez charger un fichier CSV pour commencer l'analyse.")
-
-
-st.sidebar.header("À propos")
-st.sidebar.info("""
-Cette application Streamlit implémente le plan d'action pour calculer une VaR Gaussienne,
-avec sélection manuelle des colonnes Date et Clôture.
-""")
-st.sidebar.markdown("---")
-st.sidebar.markdown("Développé avec Python et Streamlit.")
+if __name__ == "__main__":
+    main()
