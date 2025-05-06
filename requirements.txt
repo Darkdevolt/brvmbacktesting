@@ -1,6 +1,9 @@
 streamlit
 pandas
 numpy
-scipy
 matplotlib
+seaborn
 statsmodels
+yfinance
+openpyxl
+xlsxwriter
